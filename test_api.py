@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Quick endpoint smoke test against a running backend (port 8000).
+"""Quick endpoint smoke test against a running backend (PORT env var, default 8787).
 
 Run:  .venv/bin/python test_api.py
 Covers every router; LLM endpoints are expected to return 503 when
 ANTHROPIC_API_KEY is unset (that counts as a pass — graceful degradation).
 """
 
+import os
 import sys
 
 import requests
 
-BASE = "http://localhost:8000"
+BASE = f"http://localhost:{os.environ.get('PORT', '8787')}"
 PASS, FAIL = 0, 0
 
 

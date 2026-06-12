@@ -47,3 +47,12 @@ for r in (profiles, jobs, scrape, pipeline, events, chat, documents):
 @app.get("/api/health")
 def health():
     return {"ok": True, "llm_available": llm.available()}
+
+
+if __name__ == "__main__":
+    # `python -m backend.main` — same PORT contract as the Makefile.
+    import os
+
+    import uvicorn
+
+    uvicorn.run("backend.main:app", port=int(os.environ.get("PORT", "8787")), reload=True)

@@ -21,6 +21,7 @@ the backend — the browser never sees Supabase or API keys.
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env   # then edit:
+#   PORT              = backend port (default 8787)
 #   DATABASE_URL      = the session-pooler string (URL-encode special chars in the password)
 #   ANTHROPIC_API_KEY = optional; enables chat, scoring, recommendations, documents
 ```
@@ -35,13 +36,16 @@ cd frontend && npm install
 ## Run
 
 ```bash
-make dev          # starts backend (:8000) + frontend (:5173), Ctrl-C stops both
+make dev          # starts backend (:8787 or $PORT) + frontend (:5173), Ctrl-C stops both
+PORT=9001 make dev   # any port works — env var beats .env beats the 8787 default
 ```
 or in two terminals:
 ```bash
-.venv/bin/uvicorn backend.main:app --reload   # backend
-cd frontend && npm run dev                     # frontend → http://localhost:5173
+.venv/bin/uvicorn backend.main:app --reload --port 8787          # backend
+cd frontend && VITE_API_URL=http://localhost:8787 npm run dev    # frontend → http://localhost:5173
 ```
+The frontend talks to the backend only through the Vite `/api` proxy, whose
+target is the single `VITE_API_URL` setting (the Makefile passes it for you).
 
 ## Test
 

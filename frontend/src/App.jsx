@@ -143,7 +143,7 @@ function Shell() {
       <main className="ml-60 min-w-0 flex-1 px-8 py-8">
         <div className="mx-auto max-w-5xl">
           {!active ? (
-            <p className="text-sm text-neutral-500">Loading profiles… (is the backend running on :8000?)</p>
+            <p className="text-sm text-neutral-500">Loading profiles… (is the backend running? try `make dev`)</p>
           ) : (
             <>
               {tab === 'chat' && <ChatTab profile={active} />}
