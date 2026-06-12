@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from . import llm  # noqa: E402
 from .db import check_schema  # noqa: E402
-from .routers import chat, documents, events, jobs, pipeline, profiles, scrape  # noqa: E402
+from .routers import chat, documents, events, filters, jobs, pipeline, profiles, scrape  # noqa: E402
 
 
 @asynccontextmanager
@@ -40,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for r in (profiles, jobs, scrape, pipeline, events, chat, documents):
+for r in (profiles, jobs, filters, scrape, pipeline, events, chat, documents):
     app.include_router(r.router)
 
 

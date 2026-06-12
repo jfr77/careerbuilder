@@ -4,6 +4,14 @@
 -- (Safe to re-run: tables use IF NOT EXISTS, seeds use ON CONFLICT DO NOTHING.)
 -- =============================================================================
 
+-- ---------------------------------------------------------------- saved_filters (global)
+CREATE TABLE IF NOT EXISTS saved_filters (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    filter_json JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- ---------------------------------------------------------------- profiles
 CREATE TABLE IF NOT EXISTS profiles (
     id                 BIGSERIAL PRIMARY KEY,

@@ -57,7 +57,27 @@ def main():
     check("new profile: empty chat", r.status_code == 200 and r.json() == [])
     r = requests.get(f"{BASE}/api/jobs", params={"profile_id": test_id})
     check("new profile: jobs all unscored",
-          r.status_code == 200 and all(j["fit_score"] is None for j in r.json()))
+          r.status_code == 200 and all(j["fit_score"] is None for j in r.json()["results"]))
+
+    # ---- query-time filtering + facets + saved filters
+    r = requests.get(f"{BASE}/api/jobs", params={"profile_id": test_id, "q": "zzz-no-such-job-zzz"})
+    check("jobs filter: q narrows to zero", r.status_code == 200 and r.json()["total"] == 0)
+    r = requests.get(f"{BASE}/api/jobs", params={"profile_id": test_id, "status": "all", "page_size": 1})
+    check("jobs filter: pagination caps results",
+          r.status_code == 200 and len(r.json()["results"]) <= 1 and "total" in r.json())
+    r = requests.get(f"{BASE}/api/jobs/facets")
+    check("jobs facets", r.status_code == 200 and "companies" in r.json())
+    r = requests.post(f"{BASE}/api/jobs/prompt-filter", params={"profile_id": test_id},
+                      json={"prompt": "internships in Munich posted in the last 2 weeks"})
+    check("prompt-filter (or graceful 503)", llm_ok(r))
+    r = requests.post(f"{BASE}/api/filters", json={"name": "smoke test filter",
+                                                   "filter": {"q": "intern", "language": "en"}})
+    check("saved filter create", r.status_code == 201 and r.json()["filter"].get("q") == "intern")
+    sf_id = r.json().get("id")
+    r = requests.get(f"{BASE}/api/filters")
+    check("saved filter listed", r.status_code == 200 and any(f["id"] == sf_id for f in r.json()))
+    r = requests.delete(f"{BASE}/api/filters/{sf_id}")
+    check("saved filter delete", r.status_code == 200)
 
     # ---- pipeline CRUD
     r = requests.get(f"{BASE}/api/pipeline", params={"profile_id": julian["id"]})

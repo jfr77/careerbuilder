@@ -53,6 +53,15 @@ class PipelineUpdate(BaseModel):
     notes: str | None = None
 
 
+class PromptFilterBody(BaseModel):
+    prompt: str = Field(min_length=3)
+
+
+class SavedFilterCreate(BaseModel):
+    name: str = Field(min_length=1)
+    filter: dict = {}
+
+
 class PasteExtract(BaseModel):
     text: str = Field(min_length=10)
 
