@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   carreerbuilder design language
+   - warm paper canvas, ink-dark sidebar, one emerald accent
+   - Sora for display/headings, Inter for UI text
+--------------------------------------------------------------------------- */
+@theme {
+  --color-paper: #f6f5f1;
+  --color-ink: #15171b;
+  --color-ink-2: #23262c;
+  --color-line: #e6e3db;
+
+  --color-accent: #0e8a64;
+  --color-accent-deep: #0a6b4e;
+  --color-accent-soft: #e3f2ea;
+
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-paper text-ink antialiased;
+  font-feature-settings: "tnum";
+}
+
+h1, h2, h3, .display {
+  font-family: var(--font-display);
+}
+
+/* surface card used everywhere */
+.card {
+  @apply rounded-2xl border border-line bg-white;
+  box-shadow: 0 1px 2px rgb(21 23 27 / 0.04);
+}
+.card-hover {
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.card-hover:hover {
+  box-shadow: 0 6px 24px rgb(21 23 27 / 0.08);
+}
+
+/* micro label */
+.microlabel {
+  @apply text-[11px] font-semibold uppercase tracking-[0.08em] text-neutral-400;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+}
