@@ -99,16 +99,9 @@ def main():
     r = requests.get(f"{BASE}/api/scrape/status")
     check("scrape status", r.status_code == 200 and "running" in r.json())
 
-    # ---- user-defined scrape constraints (no hardcoded restrictions)
-    r = requests.get(f"{BASE}/api/scrape/settings")
-    check("scrape settings readable", r.status_code == 200
-          and {"include_keywords", "exclude_keywords"} <= set(r.json()))
-    original = {k: r.json()[k] for k in ("include_keywords", "exclude_keywords")}
-    r = requests.put(f"{BASE}/api/scrape/settings",
-                     json={"include_keywords": ["intern"], "exclude_keywords": ["senior"]})
-    check("scrape settings save + reclassify", r.status_code == 200 and "reclassified" in r.json())
-    r = requests.put(f"{BASE}/api/scrape/settings", json=original)
-    check("scrape settings restore", r.status_code == 200)
+    # ---- scrape run log (ingestion is unrestricted; no constraint endpoints)
+    r = requests.get(f"{BASE}/api/scrape/runs")
+    check("scrape runs log", r.status_code == 200 and isinstance(r.json(), list))
 
     # ---- LLM endpoints (200 with key, clean 503 without)
     r = requests.post(f"{BASE}/api/chat", params={"profile_id": test_id},

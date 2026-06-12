@@ -14,7 +14,7 @@ the backend — the browser never sees Supabase or API keys.
 ### 1. Supabase
 1. Create a free project at [supabase.com](https://supabase.com).
 2. Open the **SQL editor**, paste the entire contents of [`schema.sql`](schema.sql), run it once.
-   This creates all 7 tables and seeds profile #1 (Julian), 12 pipeline entries and ~10 events.
+   This creates all 8 tables and seeds profile #1 (Julian), 12 pipeline entries and ~10 events.
 3. On the project page click **Connect** → copy the **Session pooler** connection string.
 
 ### 2. Backend
@@ -60,7 +60,7 @@ return a clean 503 (that's asserted, not skipped).
 | Section | What it does |
 |---|---|
 | **Chat** | Anthropic-backed copilot that knows the active profile, pipeline and top matches. Can change data via 4 tools: `update_profile`, `add_to_pipeline`, `update_pipeline_stage`, `search_jobs`. History persists per profile. |
-| **Discover** | Open jobs joined with the active profile's scores, sorted by fit (score rings). Run scrapers from the UI (async with progress bar), lazy per-profile LLM scoring (1-10 + note + 4-dimension breakdown), per-job re-score, one-click add-to-pipeline. Scraper settings: company watchlists **and user-defined constraints** — include/exclude keywords, empty by default (no restrictions), re-applied retroactively on save. |
+| **Discover** | Open jobs joined with the active profile's scores, sorted by fit (score rings). Run scrapers from the UI (async with progress bar), lazy per-profile LLM scoring (1-10 + note + 4-dimension breakdown), per-job re-score, one-click add-to-pipeline. Ingestion is unrestricted — every posting from the watchlisted companies lands in the pool; filters above the list narrow it down. |
 | **Pipeline** | Kanban: Researching → Applied → In Progress → Offer → Rejected, cards color-coded by role type. Cards carry type badge, dates, deadline, link, reached-out toggle, notes, attached documents. Paste-to-add extracts fields via LLM into an editable confirm form. Per-card jumps into Studio, prefilled. |
 | **Studio** | The AI document workspace: cover letter writer (3 tones, editable, save + .txt export), CV tailor (reorders/rephrases `cv_base` only — never invents — with diff view), interview trainer (5 Q&As, 3 concepts, 2 questions to ask; savable per entry). Controls left, output canvas right. |
 | **Events** | Shared pool of Munich/DACH events, fairs, certifications and courses; per-profile save/dismiss. "Get recommendations" asks the LLM for 5-8 tailored suggestions (clearly labeled as AI output to verify). |
@@ -68,20 +68,25 @@ return a clean 503 (that's asserted, not skipped).
 
 ## Scrapers
 
-- `backend/scrapers/join_source.py` — join.com company pages. The parse logic
-  is carried over unchanged from the original tested `join_scraper.py`
-  (archived at `docs/join_scraper_original.py`).
+- `backend/scrapers/join_source.py` — join.com company pages with `?page=N`
+  pagination. The parse logic is carried over unchanged from the original
+  tested `join_scraper.py` (archived at `docs/join_scraper_original.py`).
 - `backend/scrapers/personio_source.py` — Personio's public XML job feed
-  (`https://<slug>.jobs.personio.de/xml`).
+  (`https://<slug>.jobs.personio.de/xml`), with `/search.json` as fallback.
 - `backend/scrapers/runner.py` — shared Postgres ingest: dedup by `job_key`,
-  closed-posting detection (vanished job → `closed_at`, failed fetches never
-  mass-close), polite 1 req/sec.
-- **No hardcoded relevance filter**: constraints live in
-  `data/scrape_settings.json` and are entirely user-defined (Discover →
-  Scraper settings). Empty lists = every posting is ingested and shown.
-  Saving constraints re-applies them to jobs already in the pool.
+  change detection by `content_hash` (changed postings update in place),
+  closed-posting detection (missing from **2+ consecutive successful runs** →
+  `closed_at`; failed fetches never count as a miss), randomized 1-2s delays,
+  per-domain failure backoff, and a `scrape_runs` log row per company fetch
+  (`GET /api/scrape/runs`).
+- **Ingestion is unrestricted**: every posting on a watchlisted company page
+  is stored, regardless of role type — narrowing down happens at query time
+  with the Discover filters. Language (de/en) and remote are detected
+  heuristically at ingest.
 - Watchlists are **global** JSON files in `data/` (`watchlist_join.json`,
   `watchlist_personio.json`), editable from the UI.
+- Parser tests run against saved fixtures (`tests/`), never live requests:
+  `.venv/bin/python tests/test_scrapers.py`.
 
 ## Notes
 

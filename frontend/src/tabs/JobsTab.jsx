@@ -2,19 +2,16 @@
 // Scraper sources and constraints are fully user-defined (no hardcoded filters).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
-import { Badge, Btn, Field, FitRing, inputCls, Modal, PageHead, Spinner, TagEditor, useToast } from '../ui.jsx'
+import { Badge, Btn, FitRing, inputCls, Modal, PageHead, Spinner, useToast } from '../ui.jsx'
 
-function ScraperSettingsModal({ onClose, onChanged }) {
+function ScraperSettingsModal({ onClose }) {
   const [lists, setLists] = useState(null)
-  const [cfg, setCfg] = useState(null)
   const [slug, setSlug] = useState('')
   const [source, setSource] = useState('join')
-  const [saving, setSaving] = useState(false)
   const toast = useToast()
 
   const load = () => {
     api.get('/api/scrape/watchlist').then(setLists).catch((e) => toast(e.message))
-    api.get('/api/scrape/settings').then(setCfg).catch((e) => toast(e.message))
   }
   useEffect(() => { load() }, [])
 
@@ -30,24 +27,16 @@ function ScraperSettingsModal({ onClose, onChanged }) {
     catch (e) { toast(e.message) }
   }
 
-  const saveConstraints = async () => {
-    setSaving(true)
-    try {
-      const res = await api.put('/api/scrape/settings', cfg)
-      toast(res.reclassified
-        ? `Constraints saved — ${res.reclassified} existing job(s) reclassified`
-        : 'Constraints saved', 'info')
-      onChanged()
-    } catch (e) { toast(e.message) }
-    finally { setSaving(false) }
-  }
-
   return (
     <Modal title="Scraper settings" onClose={onClose} wide>
-      {!lists || !cfg ? <Spinner label="loading…" /> : (
+      {!lists ? <Spinner label="loading…" /> : (
         <div className="space-y-6">
           <section>
             <h3 className="microlabel mb-2">Company watchlists (global)</h3>
+            <p className="mb-3 text-xs text-neutral-500">
+              Scraping ingests <span className="font-semibold text-ink">every posting</span> from your
+              watchlisted companies — narrowing down happens with the filters above the job list.
+            </p>
             <div className="space-y-3">
               {['join', 'personio'].map((src) => (
                 <div key={src} className="rounded-xl border border-line p-3">
@@ -75,30 +64,6 @@ function ScraperSettingsModal({ onClose, onChanged }) {
                   onChange={(e) => setSlug(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addSlug()} />
                 <Btn variant="primary" onClick={addSlug}>Add</Btn>
-              </div>
-            </div>
-          </section>
-
-          <section>
-            <h3 className="microlabel mb-2">Constraints — yours, not ours</h3>
-            <p className="mb-3 text-xs text-neutral-500">
-              Scraping ingests <span className="font-semibold text-ink">every posting</span> from your
-              watchlisted companies. Add keywords only if you want to narrow what shows up in Discover —
-              leave both empty for no restrictions. Saving re-applies the rules to jobs already in the pool.
-            </p>
-            <div className="space-y-3">
-              <Field label="Include keywords (title must match at least one; empty = everything)">
-                <TagEditor tags={cfg.include_keywords} placeholder="type a keyword, press Enter…"
-                  onChange={(v) => setCfg({ ...cfg, include_keywords: v })} />
-              </Field>
-              <Field label="Exclude keywords (always win)">
-                <TagEditor tags={cfg.exclude_keywords} tone="red" placeholder="e.g. senior…"
-                  onChange={(v) => setCfg({ ...cfg, exclude_keywords: v })} />
-              </Field>
-              <div className="flex justify-end">
-                <Btn variant="primary" onClick={saveConstraints} disabled={saving}>
-                  {saving ? 'Saving…' : 'Save constraints'}
-                </Btn>
               </div>
             </div>
           </section>
@@ -297,7 +262,7 @@ export default function JobsTab({ profile }) {
         </div>
       )}
 
-      {showSettings && <ScraperSettingsModal onClose={() => setShowSettings(false)} onChanged={load} />}
+      {showSettings && <ScraperSettingsModal onClose={() => { setShowSettings(false); load() }} />}
     </div>
   )
 }

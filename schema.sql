@@ -23,22 +23,43 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- ---------------------------------------------------------------- jobs (shared pool)
+-- Ingestion is unrestricted: every posting found on a watchlisted company page
+-- is stored. Filtering is a query-time concern (GET /api/jobs params).
 CREATE TABLE IF NOT EXISTS jobs (
-    id          BIGSERIAL PRIMARY KEY,
-    job_key     TEXT UNIQUE NOT NULL,
-    source      TEXT NOT NULL CHECK (source IN ('join', 'personio', 'manual')),
-    company     TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    location    TEXT,
-    employment  TEXT,
-    department  TEXT,
-    url         TEXT,
-    description TEXT,
-    relevant    BOOLEAN NOT NULL DEFAULT FALSE,
-    first_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    last_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    closed_at   TIMESTAMPTZ
+    id           BIGSERIAL PRIMARY KEY,
+    job_key      TEXT UNIQUE NOT NULL,
+    source       TEXT NOT NULL CHECK (source IN ('join', 'personio', 'manual')),
+    company      TEXT NOT NULL,
+    company_slug TEXT,
+    title        TEXT NOT NULL,
+    location     TEXT,
+    remote       BOOLEAN,
+    employment   TEXT,
+    department   TEXT,
+    language     TEXT,            -- de|en, heuristic from title/description
+    url          TEXT,
+    description  TEXT,
+    posted_date  DATE,            -- when the source exposes it (Personio createdAt)
+    content_hash TEXT,            -- change detection: hash differs -> update row
+    missed_runs  INTEGER NOT NULL DEFAULT 0,  -- consecutive runs without the posting; 2+ -> closed
+    first_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    closed_at    TIMESTAMPTZ
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_url ON jobs (url);
+
+-- ---------------------------------------------------------------- scrape_runs (log)
+CREATE TABLE IF NOT EXISTS scrape_runs (
+    id          BIGSERIAL PRIMARY KEY,
+    source      TEXT NOT NULL,
+    company     TEXT NOT NULL,
+    found       INTEGER NOT NULL DEFAULT 0,
+    new         INTEGER NOT NULL DEFAULT 0,
+    errors      TEXT,
+    duration_ms INTEGER,
+    started_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_scrape_runs_company ON scrape_runs (source, company, started_at);
 
 -- ---------------------------------------------------------------- job_scores (per profile x job)
 CREATE TABLE IF NOT EXISTS job_scores (
@@ -109,7 +130,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_jobs_relevant_open ON jobs (relevant) WHERE closed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_jobs_open ON jobs (last_seen) WHERE closed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_scores_profile ON job_scores (profile_id);
 CREATE INDEX IF NOT EXISTS idx_pipeline_profile ON pipeline (profile_id);
 CREATE INDEX IF NOT EXISTS idx_chat_profile ON chat_messages (profile_id, created_at);

@@ -16,9 +16,10 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 def job_dict(j: Job, s: JobScore | None = None):
     return {
         "id": j.id, "job_key": j.job_key, "source": j.source, "company": j.company,
-        "title": j.title, "location": j.location, "employment": j.employment,
-        "department": j.department, "url": j.url, "description": j.description,
-        "relevant": j.relevant,
+        "company_slug": j.company_slug, "title": j.title, "location": j.location,
+        "remote": j.remote, "employment": j.employment, "department": j.department,
+        "language": j.language, "url": j.url, "description": j.description,
+        "posted_date": j.posted_date.isoformat() if j.posted_date else None,
         "first_seen": j.first_seen.isoformat() if j.first_seen else None,
         "last_seen": j.last_seen.isoformat() if j.last_seen else None,
         "closed_at": j.closed_at.isoformat() if j.closed_at else None,
@@ -31,13 +32,13 @@ def job_dict(j: Job, s: JobScore | None = None):
 
 @router.get("")
 def list_jobs(profile_id: int, db: Session = Depends(get_db)):
-    """All open relevant jobs joined with the ACTIVE profile's scores,
+    """All open jobs joined with the ACTIVE profile's scores,
     fit desc, unscored last. Filtering happens client-side on this payload."""
     get_profile_or_404(db, profile_id)
     rows = db.execute(
         select(Job, JobScore)
         .outerjoin(JobScore, (JobScore.job_id == Job.id) & (JobScore.profile_id == profile_id))
-        .where(Job.relevant.is_(True), Job.closed_at.is_(None))
+        .where(Job.closed_at.is_(None))
     ).all()
     out = [job_dict(j, s) for j, s in rows]
     out.sort(key=lambda r: (r["fit_score"] is None, -(r["fit_score"] or 0), r["company"]))
@@ -99,7 +100,7 @@ def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_d
     jobs = db.scalars(
         select(Job)
         .outerjoin(JobScore, (JobScore.job_id == Job.id) & (JobScore.profile_id == profile_id))
-        .where(Job.relevant.is_(True), Job.closed_at.is_(None), JobScore.id.is_(None))
+        .where(Job.closed_at.is_(None), JobScore.id.is_(None))
         .limit(limit)
     ).all()
     done, errors = 0, []
@@ -112,7 +113,7 @@ def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_d
     remaining = db.scalar(
         select(Job.id)
         .outerjoin(JobScore, (JobScore.job_id == Job.id) & (JobScore.profile_id == profile_id))
-        .where(Job.relevant.is_(True), Job.closed_at.is_(None), JobScore.id.is_(None))
+        .where(Job.closed_at.is_(None), JobScore.id.is_(None))
         .limit(1)
     )
     return {"scored": done, "remaining": remaining is not None, "errors": errors}

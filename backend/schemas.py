@@ -11,11 +11,6 @@ class ProfileCreate(BaseModel):
     location: str | None = None
 
 
-class ScrapeSettingsBody(BaseModel):
-    include_keywords: list[str] = []
-    exclude_keywords: list[str] = []
-
-
 class ProfileUpdate(BaseModel):
     name: str | None = None
     location: str | None = None

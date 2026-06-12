@@ -30,7 +30,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 REQUIRED_TABLES = [
     "profiles", "jobs", "job_scores", "pipeline",
-    "events", "event_saves", "chat_messages",
+    "events", "event_saves", "chat_messages", "scrape_runs",
 ]
 
 

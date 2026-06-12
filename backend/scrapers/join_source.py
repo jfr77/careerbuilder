@@ -6,6 +6,7 @@ real join.com pages, so do not rewrite it. Only the storage layer changed:
 scrape_company() returns plain dicts that runner.ingest() writes to Postgres.
 """
 
+import random
 import re
 import sys
 import time
@@ -13,10 +14,13 @@ import time
 import requests
 from bs4 import BeautifulSoup
 
-REQUEST_DELAY_SECONDS = 1.0
 USER_AGENT = "JobDiscoveryMVP/0.1 (personal job search tool)"
 
 JOB_LINK_RE = re.compile(r"^/companies/([^/]+)/(\d+)-")
+
+
+def domain_for(slug):  # noqa: ARG001 — same domain for every join company
+    return "join.com"
 
 
 def make_session():
@@ -99,24 +103,28 @@ def find_next_page(html, current_url):
 
 
 def scrape_company(slug, session):
-    """Scrape all open postings for one join.com company slug.
+    """Scrape all open postings for one join.com company slug, following
+    ?page=N pagination until no next page.
 
-    Returns a list of job dicts in the shared scraper format (without source —
-    runner.ingest adds it). Network failures return partial results and log to
-    stderr, exactly like the original script.
+    Returns (jobs, error): jobs is a list of dicts in the shared scraper
+    format (without source — runner.ingest adds it); error is None on full
+    success, else a message. A mid-pagination failure returns the partial
+    results WITH an error so the runner never treats them as complete.
     """
     url = f"https://join.com/companies/{slug}"
-    all_jobs, seen_pages = [], set()
+    all_jobs, seen_pages, error = [], set(), None
     while url and url not in seen_pages:
         seen_pages.add(url)
         try:
             html = fetch(url, session)
         except requests.RequestException as e:
             print(f"  ! {slug}: fetch failed ({e})", file=sys.stderr)
-            return all_jobs
+            error = str(e)
+            break
         all_jobs.extend(parse_company_page(html, slug))
         url = find_next_page(html, url)
-        time.sleep(REQUEST_DELAY_SECONDS)
+        if url:
+            time.sleep(random.uniform(1.0, 2.0))
     # dedupe by job_key (pagination overlap safety)
     unique = {j["job_key"]: j for j in all_jobs}
-    return list(unique.values())
+    return list(unique.values()), error

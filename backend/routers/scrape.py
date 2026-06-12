@@ -3,10 +3,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Job
-from ..schemas import ScrapeSettingsBody, WatchlistAdd
+from ..models import ScrapeRun
+from ..schemas import WatchlistAdd
 from ..scrapers import runner, watchlist
-from ..scrapers import settings as scrape_settings
 
 router = APIRouter(prefix="/api/scrape", tags=["scrape"])
 
@@ -25,25 +24,17 @@ def scrape_status():
     return runner.get_state()
 
 
-@router.get("/settings")
-def get_settings():
-    """User-defined scrape constraints. Empty lists = no restrictions."""
-    return scrape_settings.load()
-
-
-@router.put("/settings")
-def update_settings(body: ScrapeSettingsBody, db: Session = Depends(get_db)):
-    """Save the constraints and re-apply them to every job already in the pool,
-    so tightening or loosening keywords immediately reshapes the Discover list."""
-    cfg = scrape_settings.save(body.include_keywords, body.exclude_keywords)
-    reclassified = 0
-    for job in db.scalars(select(Job)).all():
-        rel = runner.is_relevant(job.title, cfg)
-        if job.relevant != rel:
-            job.relevant = rel
-            reclassified += 1
-    db.commit()
-    return {**cfg, "reclassified": reclassified}
+@router.get("/runs")
+def recent_runs(limit: int = 50, db: Session = Depends(get_db)):
+    """Most recent scrape_runs log rows (one per company per run)."""
+    rows = db.scalars(
+        select(ScrapeRun).order_by(ScrapeRun.started_at.desc()).limit(min(limit, 200))
+    ).all()
+    return [{
+        "id": r.id, "source": r.source, "company": r.company, "found": r.found,
+        "new": r.new, "errors": r.errors, "duration_ms": r.duration_ms,
+        "started_at": r.started_at.isoformat() if r.started_at else None,
+    } for r in rows]
 
 
 @router.get("/watchlist")

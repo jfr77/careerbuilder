@@ -26,4 +26,5 @@ dev:
 	wait
 
 test:
+	.venv/bin/python tests/test_scrapers.py
 	PORT=$(PORT) .venv/bin/python test_api.py

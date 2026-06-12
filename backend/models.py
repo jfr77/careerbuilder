@@ -1,15 +1,20 @@
 """SQLAlchemy models mirroring schema.sql (the SQL file is the source of truth;
 tables are created there, never by SQLAlchemy)."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def utcnow():
     return datetime.now(timezone.utc)
+
+
+# SQLite (used by the scraper tests) only autoincrements INTEGER primary keys;
+# Postgres still gets BIGINT. Production schema lives in schema.sql either way.
+PKBigInt = BigInteger().with_variant(Integer(), "sqlite")
 
 
 class Base(DeclarativeBase):
@@ -38,20 +43,38 @@ class Profile(Base):
 class Job(Base):
     __tablename__ = "jobs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(PKBigInt, primary_key=True)
     job_key: Mapped[str] = mapped_column(Text, unique=True)
     source: Mapped[str] = mapped_column(Text)
     company: Mapped[str] = mapped_column(Text)
+    company_slug: Mapped[str | None] = mapped_column(Text)
     title: Mapped[str] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(Text)
+    remote: Mapped[bool | None] = mapped_column(Boolean)
     employment: Mapped[str | None] = mapped_column(Text)
     department: Mapped[str | None] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
-    relevant: Mapped[bool] = mapped_column(Boolean, default=False)
+    posted_date: Mapped[date | None] = mapped_column(Date)
+    content_hash: Mapped[str | None] = mapped_column(Text)
+    missed_runs: Mapped[int] = mapped_column(Integer, default=0)
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ScrapeRun(Base):
+    __tablename__ = "scrape_runs"
+
+    id: Mapped[int] = mapped_column(PKBigInt, primary_key=True)
+    source: Mapped[str] = mapped_column(Text)
+    company: Mapped[str] = mapped_column(Text)
+    found: Mapped[int] = mapped_column(Integer, default=0)
+    new: Mapped[int] = mapped_column(Integer, default=0)
+    errors: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class JobScore(Base):
