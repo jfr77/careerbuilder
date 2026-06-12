@@ -1,7 +1,25 @@
 // Pipeline — kanban across the 5 stages, cards color-coded by role type.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../api.js'
 import { Badge, Btn, Field, inputCls, Modal, PageHead, Spinner, useToast } from '../ui.jsx'
+
+/* Highlight the search substring inside card text. */
+function Hi({ text, q }) {
+  if (!q || !text) return text || null
+  const i = text.toLowerCase().indexOf(q.toLowerCase())
+  if (i === -1) return text
+  return (
+    <>
+      {text.slice(0, i)}
+      <mark className="rounded-sm bg-amber-200/80 px-0.5">{text.slice(i, i + q.length)}</mark>
+      {text.slice(i + q.length)}
+    </>
+  )
+}
+
+/* Search matches company, role, notes and contact name (when present). */
+const cardHaystack = (e) =>
+  `${e.company} ${e.role} ${e.notes || ''} ${e.contact_name || ''}`.toLowerCase()
 
 const STAGES = [
   { id: 'researching', label: 'Researching' },
@@ -55,7 +73,7 @@ function EntryForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
-function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit }) {
+function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit, highlight }) {
   const [open, setOpen] = useState(false)
   const idx = STAGES.findIndex((s) => s.id === entry.stage)
   const docCount = Object.values(entry.documents || {}).reduce((n, arr) => n + (arr?.length || 0), 0)
@@ -64,10 +82,10 @@ function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit }) {
       style={{ borderLeft: `3px solid ${TYPE_BAR[entry.type]}` }}>
       <div className="cursor-pointer p-3" onClick={() => setOpen(!open)}>
         <div className="flex items-center justify-between gap-2">
-          <span className="display truncate font-semibold">{entry.company}</span>
+          <span className="display truncate font-semibold"><Hi text={entry.company} q={highlight} /></span>
           <Badge tone={TYPE_TONES[entry.type]}>{entry.type}</Badge>
         </div>
-        <div className="truncate text-neutral-600">{entry.role}</div>
+        <div className="truncate text-neutral-600"><Hi text={entry.role} q={highlight} /></div>
         <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-neutral-400">
           {entry.start_date && <span>start {entry.start_date}</span>}
           {entry.deadline && <span className="font-medium text-amber-600">due {entry.deadline}</span>}
@@ -80,7 +98,7 @@ function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit }) {
           {entry.link && (
             <a className="block truncate text-xs text-accent-deep hover:underline" href={entry.link} target="_blank" rel="noreferrer">{entry.link}</a>
           )}
-          {entry.notes && <p className="text-xs text-neutral-600">{entry.notes}</p>}
+          {entry.notes && <p className="text-xs text-neutral-600"><Hi text={entry.notes} q={highlight} /></p>}
           <label className="flex items-center gap-1.5 text-xs text-neutral-600">
             <input type="checkbox" checked={entry.reached_out}
               onChange={(e) => onUpdate(entry.id, { reached_out: e.target.checked })} />
@@ -112,7 +130,16 @@ export default function PipelineTab({ profile, onGenerateDoc }) {
   const [extracting, setExtracting] = useState(false)
   const [extracted, setExtracted] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')        // raw input
+  const [query, setQuery] = useState('')          // debounced, drives matching
+  const searchRef = useRef(null)
   const toast = useToast()
+
+  // ~200ms debounce keeps typing instant even with hundreds of cards
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), 200)
+    return () => clearTimeout(t)
+  }, [search])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -167,20 +194,39 @@ export default function PipelineTab({ profile, onGenerateDoc }) {
         <Btn variant="primary" onClick={() => setShowAdd(true)}>+ Add entry</Btn>
       </PageHead>
 
+      <div className="relative mb-4 max-w-md">
+        <input ref={searchRef} className={inputCls + ' pr-9'}
+          placeholder="Search applications… (company, role, notes, contact)"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Escape') { setSearch(''); setQuery('') } }} />
+        {search && (
+          <button
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-ink"
+            onClick={() => { setSearch(''); setQuery(''); searchRef.current?.focus() }}>
+            ✕
+          </button>
+        )}
+      </div>
+
       {loading ? <Spinner label="loading pipeline…" /> : (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">
           {STAGES.map((stage) => {
             const col = entries.filter((e) => e.stage === stage.id)
+            const matching = query ? col.filter((e) => cardHaystack(e).includes(query.toLowerCase())) : col
             return (
               <div key={stage.id} className="rounded-2xl bg-black/[0.035] p-2">
                 <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
                   <h3 className="microlabel">{stage.label}</h3>
-                  <span className="rounded-md bg-white px-1.5 text-xs font-semibold text-neutral-500">{col.length}</span>
+                  <span className="rounded-md bg-white px-1.5 text-xs font-semibold text-neutral-500">
+                    {query ? `${matching.length}/${col.length}` : col.length}
+                  </span>
                 </div>
                 <div className="space-y-2">
-                  {col.map((e) => (
+                  {matching.map((e) => (
                     <Card key={e.id} entry={e} onMove={move} onUpdate={update}
-                      onDelete={remove} onGenerateDoc={onGenerateDoc} onEdit={setEditing} />
+                      onDelete={remove} onGenerateDoc={onGenerateDoc} onEdit={setEditing}
+                      highlight={query} />
                   ))}
                 </div>
               </div>
