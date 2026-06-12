@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from .. import llm
 from ..db import get_db
 from ..models import PipelineEntry
-from ..schemas import PIPELINE_STAGES, PIPELINE_TYPES, PasteExtract, PipelineCreate, PipelineUpdate
+from ..schemas import (PIPELINE_STAGES, PIPELINE_TYPES, PasteExtract,
+                       PipelineCreate, PipelineImport, PipelineUpdate)
 from .profiles import get_profile_or_404
 
 router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
@@ -20,6 +21,14 @@ def entry_dict(e: PipelineEntry):
         "link": e.link, "start_date": e.start_date, "end_date": e.end_date,
         "deadline": e.deadline, "reached_out": e.reached_out, "notes": e.notes,
         "documents": e.documents or {},
+        "salary_range": e.salary_range, "source": e.source,
+        "cv_version": e.cv_version, "cover_letter_version": e.cover_letter_version,
+        "contact_name": e.contact_name, "contact_email": e.contact_email,
+        "contact_role": e.contact_role,
+        "referral": e.referral, "referral_name": e.referral_name,
+        "follow_up_date": e.follow_up_date.isoformat() if e.follow_up_date else None,
+        "response_date": e.response_date.isoformat() if e.response_date else None,
+        "interviews": e.interviews, "excitement": e.excitement,
         "created_at": e.created_at.isoformat() if e.created_at else None,
         "updated_at": e.updated_at.isoformat() if e.updated_at else None,
     }
@@ -54,6 +63,24 @@ def create_entry(profile_id: int, body: PipelineCreate, db: Session = Depends(ge
     db.add(entry)
     db.commit()
     return entry_dict(entry)
+
+
+@router.post("/import", status_code=201)
+def import_entries(profile_id: int, body: PipelineImport, db: Session = Depends(get_db)):
+    """Bulk create for CSV/Excel import. Rows with an unknown type/stage are
+    coerced to safe defaults rather than rejected — spreadsheets are messy."""
+    get_profile_or_404(db, profile_id)
+    created = 0
+    for item in body.entries:
+        data = item.model_dump()
+        if data["type"] not in PIPELINE_TYPES:
+            data["type"] = "other"
+        if data["stage"] not in PIPELINE_STAGES:
+            data["stage"] = "researching"
+        db.add(PipelineEntry(profile_id=profile_id, documents={}, **data))
+        created += 1
+    db.commit()
+    return {"created": created}
 
 
 @router.patch("/{entry_id}")

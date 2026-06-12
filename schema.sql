@@ -99,6 +99,20 @@ CREATE TABLE IF NOT EXISTS pipeline (
     reached_out BOOLEAN NOT NULL DEFAULT FALSE,
     notes       TEXT,
     documents   JSONB NOT NULL DEFAULT '{}',
+    -- Excel-tracker parity (all nullable)
+    salary_range         TEXT,
+    source               TEXT,     -- where found: join|personio|linkedin|referral|other
+    cv_version           TEXT,     -- which CV file/version was sent
+    cover_letter_version TEXT,
+    contact_name         TEXT,
+    contact_email        TEXT,
+    contact_role         TEXT,
+    referral             BOOLEAN,
+    referral_name        TEXT,
+    follow_up_date       DATE,     -- <= today surfaces a "due" badge on the board
+    response_date        DATE,
+    interviews           JSONB,    -- [{round, type, date, notes}]
+    excitement           INTEGER CHECK (excitement BETWEEN 1 AND 5),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

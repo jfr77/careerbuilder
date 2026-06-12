@@ -1,5 +1,7 @@
 """Request bodies. Responses are plain dicts assembled in the routers."""
 
+from datetime import date
+
 from pydantic import BaseModel, Field
 
 PIPELINE_TYPES = {"fa", "analytics", "consulting", "vc", "other"}
@@ -38,6 +40,19 @@ class PipelineCreate(BaseModel):
     deadline: str | None = None
     reached_out: bool = False
     notes: str | None = None
+    salary_range: str | None = None
+    source: str | None = None
+    cv_version: str | None = None
+    cover_letter_version: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_role: str | None = None
+    referral: bool | None = None
+    referral_name: str | None = None
+    follow_up_date: date | None = None
+    response_date: date | None = None
+    interviews: list | None = None
+    excitement: int | None = Field(default=None, ge=1, le=5)
 
 
 class PipelineUpdate(BaseModel):
@@ -51,6 +66,23 @@ class PipelineUpdate(BaseModel):
     deadline: str | None = None
     reached_out: bool | None = None
     notes: str | None = None
+    salary_range: str | None = None
+    source: str | None = None
+    cv_version: str | None = None
+    cover_letter_version: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_role: str | None = None
+    referral: bool | None = None
+    referral_name: str | None = None
+    follow_up_date: date | None = None
+    response_date: date | None = None
+    interviews: list | None = None
+    excitement: int | None = Field(default=None, ge=1, le=5)
+
+
+class PipelineImport(BaseModel):
+    entries: list[PipelineCreate] = Field(min_length=1, max_length=1000)
 
 
 class PromptFilterBody(BaseModel):
