@@ -141,11 +141,14 @@ def save_document(body: SaveDocumentBody, db: Session = Depends(get_db)):
     entry = get_entry_or_404(db, body.pipeline_id)
     docs = dict(entry.documents or {})
     bucket = docs.setdefault(body.doc_type + "s", [])
-    bucket.append({
+    item = {
         "title": body.title,
         "content": body.content,
         "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-    })
+    }
+    if body.meta:
+        item["meta"] = body.meta
+    bucket.append(item)
     entry.documents = docs
     flag_modified(entry, "documents")
     db.commit()

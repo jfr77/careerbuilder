@@ -110,6 +110,32 @@ class EventSaveBody(BaseModel):
     saved: bool
 
 
+TEMPLATE_TYPES = {"cover_letter", "cv_section", "outreach"}
+
+
+class TemplateCreate(BaseModel):
+    name: str = Field(min_length=1)
+    type: str = "cover_letter"
+    language: str = "en"
+    body: str = Field(min_length=1)
+
+
+class TemplateUpdate(BaseModel):
+    name: str | None = None
+    type: str | None = None
+    language: str | None = None
+    body: str | None = None
+
+
+class TemplateRenderRequest(BaseModel):
+    pipeline_id: int | None = None
+
+
+class TemplateDraftRequest(BaseModel):
+    pipeline_id: int | None = None
+    pasted_posting: str | None = None
+
+
 class CoverLetterRequest(BaseModel):
     pipeline_id: int | None = None
     pasted_posting: str | None = None
@@ -121,6 +147,7 @@ class SaveDocumentBody(BaseModel):
     doc_type: str  # cover_letter | cv | brief
     title: str
     content: str
+    meta: dict | None = None  # provenance, e.g. {template_id, template_name}
 
 
 class CVTailorRequest(BaseModel):

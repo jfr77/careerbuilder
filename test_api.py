@@ -123,6 +123,35 @@ def main():
     r = requests.get(f"{BASE}/api/scrape/runs")
     check("scrape runs log", r.status_code == 200 and isinstance(r.json(), list))
 
+    # ---- studio templates
+    r = requests.get(f"{BASE}/api/templates")
+    builtins = [t for t in r.json() if t["is_builtin"]] if r.status_code == 200 else []
+    check("templates: built-ins seeded", r.status_code == 200 and len(builtins) >= 4)
+    b = builtins[0]
+    r = requests.patch(f"{BASE}/api/templates/{b['id']}", json={"name": "x"})
+    check("templates: built-in is read-only (403)", r.status_code == 403)
+    r = requests.delete(f"{BASE}/api/templates/{b['id']}")
+    check("templates: built-in undeletable (403)", r.status_code == 403)
+    r = requests.post(f"{BASE}/api/templates/{b['id']}/duplicate")
+    check("templates: duplicate built-in", r.status_code == 201 and not r.json()["is_builtin"])
+    dup_id = r.json()["id"]
+    r = requests.patch(f"{BASE}/api/templates/{dup_id}", json={"name": "My custom letter"})
+    check("templates: edit own copy", r.status_code == 200 and r.json()["name"] == "My custom letter")
+    # render fills placeholders from card + profile and reports unresolved ones
+    r = requests.post(f"{BASE}/api/templates/{dup_id}/render", params={"profile_id": test_id},
+                      json={"pipeline_id": entry_id})
+    rendered = r.json() if r.status_code == 200 else {}
+    check("templates: render fills card+profile placeholders",
+          r.status_code == 200 and "{{company}}" not in rendered.get("text", "{{company}}")
+          and "{{my_name}}" not in rendered.get("text", "{{my_name}}"), rendered)
+    check("templates: unresolved placeholders reported",
+          "hiring_manager" in rendered.get("unresolved", []), rendered)
+    r = requests.post(f"{BASE}/api/templates/{dup_id}/draft", params={"profile_id": test_id},
+                      json={"pipeline_id": entry_id})
+    check("templates: draft with AI (or graceful 503)", llm_ok(r))
+    r = requests.delete(f"{BASE}/api/templates/{dup_id}")
+    check("templates: delete own template", r.status_code == 200)
+
     # ---- LLM endpoints (200 with key, clean 503 without)
     r = requests.post(f"{BASE}/api/chat", params={"profile_id": test_id},
                       json={"message": "One sentence: what should I do next?"})

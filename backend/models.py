@@ -77,6 +77,19 @@ class ScrapeRun(Base):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Template(Base):
+    __tablename__ = "templates"
+
+    id: Mapped[int] = mapped_column(PKBigInt, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    type: Mapped[str] = mapped_column(Text)
+    language: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class SavedFilter(Base):
     __tablename__ = "saved_filters"
 

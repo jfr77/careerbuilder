@@ -1,14 +1,67 @@
-// Studio — the AI document workspace: cover letters, tailored CVs, interview
-// prep. Controls on the left, generated output on the right canvas.
+// Studio — the AI document workspace: templates, cover letters, tailored CVs,
+// interview prep. Controls on the left, generated output on the right canvas.
 import { useEffect, useState } from 'react'
 import { api, downloadText } from '../api.js'
-import { Badge, Btn, Field, inputCls, PageHead, Spinner, useToast } from '../ui.jsx'
+import { Badge, Btn, Field, inputCls, Modal, PageHead, Spinner, useToast } from '../ui.jsx'
 
 const TOOLS = [
+  { id: 'templates', title: 'Templates', desc: 'Library with placeholders + AI drafting' },
   { id: 'cover', title: 'Cover letter', desc: 'Drafts a one-pager from your profile + the role' },
   { id: 'cv', title: 'CV tailor', desc: 'Reorders & rephrases your master CV — never invents' },
   { id: 'trainer', title: 'Interview prep', desc: 'Likely questions, concepts, questions to ask' },
 ]
+
+const TEMPLATE_TYPES = ['cover_letter', 'cv_section', 'outreach']
+
+function TemplateEditorModal({ initial, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    name: '', type: 'cover_letter', language: 'en', body: '', ...(initial || {}),
+  })
+  const [saving, setSaving] = useState(false)
+  const toast = useToast()
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const payload = { name: form.name, type: form.type, language: form.language, body: form.body }
+      const saved = form.id
+        ? await api.patch(`/api/templates/${form.id}`, payload)
+        : await api.post('/api/templates', payload)
+      onSaved(saved)
+      onClose()
+    } catch (e) { toast(e.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <Modal title={form.id ? `Edit ${form.name}` : 'New template'} onClose={onClose} wide>
+      <div className="space-y-3">
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Name"><input className={inputCls} value={form.name} onChange={set('name')} /></Field>
+          <Field label="Type">
+            <select className={inputCls} value={form.type} onChange={set('type')}>
+              {TEMPLATE_TYPES.map((t) => <option key={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Language">
+            <select className={inputCls} value={form.language} onChange={set('language')}>
+              <option value="de">de</option><option value="en">en</option>
+            </select>
+          </Field>
+        </div>
+        <Field label="Body" hint="Placeholders: {{company}} {{role}} {{hiring_manager}} {{source}} {{my_name}} — [square brackets] mark spots the AI should write.">
+          <textarea className={inputCls + ' min-h-[300px] font-mono !text-xs'}
+            value={form.body} onChange={set('body')} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <Btn onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={save} disabled={saving || !form.name.trim() || !form.body.trim()}>Save</Btn>
+        </div>
+      </div>
+    </Modal>
+  )
+}
 
 const TONES = [
   { id: 'formal_de', label: 'Formal · DE' },
@@ -42,7 +95,7 @@ function OutputCanvas({ children, empty }) {
 }
 
 export default function StudioTab({ profile, docRequest, onDocRequestHandled }) {
-  const [tool, setTool] = useState('cover')
+  const [tool, setTool] = useState('templates')
   const [pipeline, setPipeline] = useState([])
   const [pipelineId, setPipelineId] = useState('')
   const [pasted, setPasted] = useState('')
@@ -53,11 +106,20 @@ export default function StudioTab({ profile, docRequest, onDocRequestHandled }) 
   const [cvResult, setCvResult] = useState(null)   // {tailored, diff}
   const [cvView, setCvView] = useState('diff')
   const [brief, setBrief] = useState(null)         // trainer JSON
+  // templates tool
+  const [templates, setTemplates] = useState([])
+  const [templateId, setTemplateId] = useState('')
+  const [tplOut, setTplOut] = useState(null)       // {text, unresolved, template_name}
+  const [tplEditor, setTplEditor] = useState(null) // null | {} (new) | template (edit)
   const toast = useToast()
 
+  const loadTemplates = () =>
+    api.get('/api/templates').then(setTemplates).catch(() => {})
+
   useEffect(() => {
-    setPipeline([]); setPipelineId(''); setDraft(''); setCvResult(null); setBrief(null)
+    setPipeline([]); setPipelineId(''); setDraft(''); setCvResult(null); setBrief(null); setTplOut(null)
     api.get(`/api/pipeline?profile_id=${profile.id}`).then(setPipeline).catch(() => {})
+    loadTemplates()
   }, [profile.id])
 
   // jump-in from a pipeline card
@@ -70,6 +132,63 @@ export default function StudioTab({ profile, docRequest, onDocRequestHandled }) 
   }, [docRequest])
 
   const entry = pipeline.find((p) => p.id === Number(pipelineId))
+  const template = templates.find((t) => t.id === Number(templateId))
+
+  const fillTemplate = async () => {
+    setBusy(true)
+    try {
+      setTplOut(await api.post(`/api/templates/${templateId}/render?profile_id=${profile.id}`, {
+        pipeline_id: pipelineId ? Number(pipelineId) : null,
+      }))
+    } catch (e) { toast(e.message) }
+    finally { setBusy(false) }
+  }
+
+  const draftTemplateWithAI = async () => {
+    setBusy(true)
+    try {
+      setTplOut(await api.post(`/api/templates/${templateId}/draft?profile_id=${profile.id}`, {
+        pipeline_id: pipelineId ? Number(pipelineId) : null,
+        pasted_posting: pasted.trim() || null,
+      }))
+    } catch (e) { toast(e.message) }
+    finally { setBusy(false) }
+  }
+
+  const saveTplDraft = async () => {
+    const title = `${tplOut.template_name} — ${entry?.company} (${new Date().toISOString().slice(0, 10)})`
+    try {
+      await api.post('/api/documents/save', {
+        pipeline_id: Number(pipelineId),
+        doc_type: template?.type === 'cv_section' ? 'cv' : 'cover_letter',
+        title,
+        content: tplOut.text,
+        meta: { template_id: tplOut.template_id, template_name: tplOut.template_name },
+      })
+      if (template?.type !== 'cv_section') {
+        await api.patch(`/api/pipeline/${pipelineId}`, { cover_letter_version: title })
+      }
+      toast(`Saved to ${entry?.company} as document version`, 'info')
+    } catch (e) { toast(e.message) }
+  }
+
+  const deleteTemplate = async () => {
+    if (!template || template.is_builtin) return
+    if (!confirm(`Delete template "${template.name}"?`)) return
+    try {
+      await api.del(`/api/templates/${template.id}`)
+      setTemplateId(''); setTplOut(null); loadTemplates()
+    } catch (e) { toast(e.message) }
+  }
+
+  const duplicateTemplate = async () => {
+    try {
+      const copy = await api.post(`/api/templates/${templateId}/duplicate`)
+      await loadTemplates()
+      setTemplateId(String(copy.id))
+      toast(`Duplicated as “${copy.name}” — now editable`, 'info')
+    } catch (e) { toast(e.message) }
+  }
 
   const generate = async () => {
     setBusy(true)
@@ -131,6 +250,36 @@ export default function StudioTab({ profile, docRequest, onDocRequestHandled }) 
           </div>
 
           <div className="card space-y-3 p-4">
+            {tool === 'templates' && (
+              <>
+                <Field label="Template">
+                  <select className={inputCls} value={templateId}
+                    onChange={(e) => { setTemplateId(e.target.value); setTplOut(null) }}>
+                    <option value="">— pick a template —</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.is_builtin ? '◆ ' : ''}{t.name} · {t.type} · {t.language}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <div className="flex flex-wrap gap-1.5 text-xs">
+                  <Btn className="!px-2 !py-1 !text-xs" onClick={() => setTplEditor({})}>+ New</Btn>
+                  {template && (
+                    <Btn className="!px-2 !py-1 !text-xs" onClick={duplicateTemplate}>Duplicate</Btn>
+                  )}
+                  {template && !template.is_builtin && (
+                    <>
+                      <Btn className="!px-2 !py-1 !text-xs" onClick={() => setTplEditor(template)}>Edit</Btn>
+                      <Btn variant="danger" className="!px-2 !py-1 !text-xs" onClick={deleteTemplate}>Delete</Btn>
+                    </>
+                  )}
+                  {template?.is_builtin && (
+                    <span className="self-center text-neutral-400">built-in · read-only</span>
+                  )}
+                </div>
+              </>
+            )}
             <EntryPicker pipeline={pipeline} value={pipelineId} onChange={setPipelineId} allowNone />
             {tool !== 'trainer' && (
               <Field label="Or paste a posting">
@@ -159,14 +308,59 @@ export default function StudioTab({ profile, docRequest, onDocRequestHandled }) 
                   placeholder="e.g. Venture Capital" />
               </Field>
             )}
-            <Btn variant="accent" className="w-full" onClick={generate} disabled={busy || !canGenerate}>
-              {busy ? <Spinner label="generating…" /> : 'Generate'}
-            </Btn>
+            {tool === 'templates' ? (
+              <div className="space-y-2">
+                <Btn className="w-full" onClick={fillTemplate} disabled={busy || !templateId}>
+                  Fill placeholders
+                </Btn>
+                <Btn variant="accent" className="w-full" onClick={draftTemplateWithAI}
+                  disabled={busy || !templateId || (!pipelineId && pasted.trim().length < 10)}>
+                  {busy ? <Spinner label="drafting…" /> : '✦ Draft with AI'}
+                </Btn>
+              </div>
+            ) : (
+              <Btn variant="accent" className="w-full" onClick={generate} disabled={busy || !canGenerate}>
+                {busy ? <Spinner label="generating…" /> : 'Generate'}
+              </Btn>
+            )}
           </div>
         </div>
 
         {/* ---------------------------------- output */}
         <div>
+          {tool === 'templates' && (
+            <OutputCanvas empty="Pick a template (and a pipeline entry), then Fill or ✦ Draft with AI.">
+              {tplOut && (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="microlabel">
+                      {tplOut.template_name} — editable
+                    </span>
+                    <div className="flex gap-2">
+                      <Btn onClick={() => downloadText('draft.txt', tplOut.text)}>Download .txt</Btn>
+                      {pipelineId && (
+                        <Btn variant="primary" onClick={saveTplDraft}>Save to entry</Btn>
+                      )}
+                    </div>
+                  </div>
+                  {tplOut.unresolved.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      unresolved:
+                      {tplOut.unresolved.map((p) => (
+                        <code key={p} className="rounded bg-amber-100 px-1 font-mono">{'{{'}{p}{'}}'}</code>
+                      ))}
+                      <span className="text-amber-600">— link a pipeline entry with these fields, edit manually, or ✦ Draft with AI</span>
+                    </div>
+                  )}
+                  <textarea
+                    className="min-h-[460px] w-full resize-y rounded-xl border border-line bg-paper/50 p-5 font-serif text-[15px] leading-relaxed focus:border-accent focus:outline-none"
+                    value={tplOut.text}
+                    onChange={(e) => setTplOut({ ...tplOut, text: e.target.value })} />
+                </div>
+              )}
+            </OutputCanvas>
+          )}
+
           {tool === 'cover' && (
             <OutputCanvas empty="Pick a role, choose a tone, hit Generate.">
               {draft && (
@@ -282,6 +476,13 @@ export default function StudioTab({ profile, docRequest, onDocRequestHandled }) 
           )}
         </div>
       </div>
+
+      {tplEditor && (
+        <TemplateEditorModal
+          initial={tplEditor.id ? tplEditor : null}
+          onClose={() => setTplEditor(null)}
+          onSaved={(t) => { loadTemplates(); setTemplateId(String(t.id)) }} />
+      )}
     </div>
   )
 }

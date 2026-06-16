@@ -12,6 +12,21 @@ CREATE TABLE IF NOT EXISTS saved_filters (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- ---------------------------------------------------------------- templates (Studio library)
+-- Placeholder syntax {{company}} {{role}} {{hiring_manager}} {{source}} {{my_name}}
+-- is resolved at draft time from the linked pipeline card + active profile.
+CREATE TABLE IF NOT EXISTS templates (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL CHECK (type IN ('cover_letter', 'cv_section', 'outreach')),
+    language    TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('de', 'en')),
+    body        TEXT NOT NULL,
+    is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_templates_type ON templates (type);
+
 -- ---------------------------------------------------------------- profiles
 CREATE TABLE IF NOT EXISTS profiles (
     id                 BIGSERIAL PRIMARY KEY,
@@ -200,6 +215,23 @@ SELECT * FROM (VALUES
     (1, 'Redpine',            'Business Development Intern',      'fa',         'applied', 'Oct 2026', FALSE, NULL)
 ) AS seed(profile_id, company, role, type, stage, start_date, reached_out, notes)
 WHERE NOT EXISTS (SELECT 1 FROM pipeline);
+
+-- Built-in studio templates ({{placeholder}} syntax; built-ins are read-only
+-- in the app — duplicate to customize)
+INSERT INTO templates (name, type, language, body, is_builtin)
+SELECT * FROM (VALUES
+('Anschreiben — klassisch (DE)', 'cover_letter', 'de',
+E'{{my_name}}\nMünchen\n\n{{company}}\nz. Hd. {{hiring_manager}}\n\nBewerbung als {{role}}\n\nSehr geehrte/r {{hiring_manager}},\n\nmit großem Interesse habe ich Ihre Ausschreibung für die Position {{role}} bei {{company}} (gefunden über {{source}}) gelesen. Die Kombination aus [konkreter Aspekt der Rolle] und [Aspekt des Unternehmens] entspricht genau dem Umfeld, in dem ich arbeiten und lernen möchte.\n\nIn meiner bisherigen Tätigkeit habe ich [wichtigste relevante Erfahrung mit Ergebnis]. Dabei habe ich gelernt, [Fähigkeit, die zur Rolle passt]. Diese Erfahrung möchte ich bei {{company}} einbringen, um [konkreter Beitrag].\n\nÜber die Möglichkeit eines persönlichen Gesprächs freue ich mich sehr.\n\nMit freundlichen Grüßen\n{{my_name}}', TRUE),
+('Cover letter — startup tone (EN)', 'cover_letter', 'en',
+E'Hi {{hiring_manager}},\n\nI''m {{my_name}}, and I want to work on {{role}} at {{company}}.\n\nWhy me: [one sentence on the single most relevant thing you''ve done, with a number]. [One sentence on a second proof point]. I work fast, take ownership, and don''t need hand-holding.\n\nWhy {{company}}: [one specific, honest reason — product, market, team].\n\nI''d love to show you what I could contribute in a quick call.\n\nBest,\n{{my_name}}', TRUE),
+('Founder''s Associate outreach (EN)', 'outreach', 'en',
+E'Subject: {{role}} @ {{company}} — quick intro\n\nHi {{hiring_manager}},\n\nI''m {{my_name}} — I saw the {{role}} opening via {{source}} and didn''t want to just disappear into the applicant pile.\n\nIn short: [strongest 1-line proof of generalist execution, with a number]. I''m looking for exactly the kind of end-to-end ownership a founder''s associate role offers, and [specific reason {{company}} stands out].\n\nWould you be open to a 15-minute call this week?\n\n{{my_name}}', TRUE),
+('CV Profil / Kurzprofil (DE)', 'cv_section', 'de',
+E'PROFIL\n{{my_name}} — [Studiengang/Abschluss], [Stadt]. [Anzahl] Jahre Erfahrung in [Bereich] mit Schwerpunkt [Schwerpunkt]. Nachweisbare Erfolge: [Erfolg mit Zahl]. Sucht {{role}} bei {{company}}, um [Lernziel/Beitrag].', TRUE),
+('CV profile / summary (EN)', 'cv_section', 'en',
+E'PROFILE\n{{my_name}} — [degree/university], [city]. [N] years of experience in [area], focused on [focus]. Proven impact: [achievement with a number]. Now looking to bring [key strength] to the {{role}} role at {{company}}.', TRUE)
+) AS seed(name, type, language, body, is_builtin)
+WHERE NOT EXISTS (SELECT 1 FROM templates WHERE is_builtin);
 
 -- Events & certifications: realistic Munich/DACH seed set
 INSERT INTO events (title, kind, provider, location, date, url, cost, source)
