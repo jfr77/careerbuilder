@@ -191,14 +191,19 @@ function EntryForm({ initial, onSave, onCancel, saving }) {
   )
 }
 
-function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit, highlight }) {
+function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit, highlight, onDragStart, onDragEnd, dragging }) {
   const [open, setOpen] = useState(false)
   const idx = STAGES.findIndex((s) => s.id === entry.stage)
   const docCount = Object.values(entry.documents || {}).reduce((n, arr) => n + (arr?.length || 0), 0)
   return (
-    <div className="card card-hover overflow-hidden text-sm"
-      style={{ borderLeft: `3px solid ${TYPE_BAR[entry.type]}` }}>
-      <div className="cursor-pointer p-3" onClick={() => setOpen(!open)}>
+    <div className={`card card-hover overflow-hidden text-sm transition-opacity ${dragging ? 'opacity-40' : ''}`}
+      style={{ borderLeft: `3px solid ${TYPE_BAR[entry.type]}` }}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(entry.id)); onDragStart(entry) }}
+      onDragEnd={onDragEnd}>
+      <div className="flex cursor-grab items-start active:cursor-grabbing" onClick={() => setOpen(!open)}>
+        <span className="select-none px-1.5 pt-3 text-neutral-300" aria-hidden="true">⠿</span>
+        <div className="min-w-0 flex-1 py-3 pr-3">
         <div className="flex items-center justify-between gap-2">
           <span className="display truncate font-semibold"><Hi text={entry.company} q={highlight} /></span>
           <Badge tone={TYPE_TONES[entry.type]}>{entry.type}</Badge>
@@ -210,6 +215,7 @@ function Card({ entry, onMove, onUpdate, onDelete, onGenerateDoc, onEdit, highli
           {entry.deadline && <span className="font-medium text-amber-600">due {entry.deadline}</span>}
           {entry.reached_out && <span className="text-accent-deep">reached out ✓</span>}
           {docCount > 0 && <span>{docCount} doc{docCount > 1 ? 's' : ''}</span>}
+        </div>
         </div>
       </div>
       {open && (
@@ -271,6 +277,8 @@ export default function PipelineTab({ profile, onGenerateDoc }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')        // raw input
   const [query, setQuery] = useState('')          // debounced, drives matching
+  const [dragId, setDragId] = useState(null)      // card being dragged
+  const [dragOverStage, setDragOverStage] = useState(null)  // column under the cursor
   const searchRef = useRef(null)
   const toast = useToast()
 
@@ -309,6 +317,17 @@ export default function PipelineTab({ profile, onGenerateDoc }) {
     const idx = STAGES.findIndex((s) => s.id === entry.stage)
     const next = STAGES[idx + dir]
     if (next) update(entry.id, { stage: next.id })
+  }
+
+  // drag a card into a column to set its stage. The dragged id comes from the
+  // drop event's dataTransfer (set in Card.onDragStart) so it works regardless
+  // of React state timing; dragId state is just for the drag visuals.
+  const dropOnStage = (stageId, draggedId) => {
+    setDragOverStage(null)
+    const id = draggedId ?? dragId
+    setDragId(null)
+    const entry = entries.find((e) => e.id === id)
+    if (entry && entry.stage !== stageId) update(entry.id, { stage: stageId })
   }
 
   const remove = async (entry) => {
@@ -383,20 +402,34 @@ export default function PipelineTab({ profile, onGenerateDoc }) {
           {STAGES.map((stage) => {
             const col = entries.filter((e) => e.stage === stage.id)
             const matching = query ? col.filter((e) => cardHaystack(e).includes(query.toLowerCase())) : col
+            const isTarget = dragOverStage === stage.id
             return (
-              <div key={stage.id} className="rounded-2xl bg-black/[0.035] p-2">
+              <div key={stage.id}
+                className={`rounded-2xl p-2 transition-colors ${
+                  isTarget ? 'bg-accent-soft ring-2 ring-accent/40' : 'bg-black/[0.035]'}`}
+                onDragOver={(e) => { if (dragId != null) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverStage !== stage.id) setDragOverStage(stage.id) } }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOverStage((s) => (s === stage.id ? null : s)) }}
+                onDrop={(e) => { e.preventDefault(); dropOnStage(stage.id, Number(e.dataTransfer.getData('text/plain'))) }}>
                 <div className="mb-2 flex items-center justify-between px-1.5 pt-1">
                   <h3 className="microlabel">{stage.label}</h3>
                   <span className="rounded-md bg-white px-1.5 text-xs font-semibold text-neutral-500">
                     {query ? `${matching.length}/${col.length}` : col.length}
                   </span>
                 </div>
-                <div className="space-y-2">
+                <div className="min-h-[60px] space-y-2">
                   {matching.map((e) => (
                     <Card key={e.id} entry={e} onMove={move} onUpdate={update}
                       onDelete={remove} onGenerateDoc={onGenerateDoc} onEdit={setEditing}
-                      highlight={query} />
+                      highlight={query}
+                      dragging={dragId === e.id}
+                      onDragStart={(en) => setDragId(en.id)}
+                      onDragEnd={() => { setDragId(null); setDragOverStage(null) }} />
                   ))}
+                  {isTarget && matching.length === 0 && (
+                    <div className="rounded-xl border-2 border-dashed border-accent/40 py-4 text-center text-xs text-accent-deep">
+                      drop here
+                    </div>
+                  )}
                 </div>
               </div>
             )
