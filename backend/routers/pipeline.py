@@ -5,13 +5,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
+from ..auth import current_user, owns
 from ..db import get_db
-from ..models import PipelineEntry
+from ..models import PipelineEntry, Profile
 from ..schemas import (PIPELINE_STAGES, PIPELINE_TYPES, PasteExtract,
                        PipelineCreate, PipelineImport, PipelineUpdate)
 from .profiles import get_profile_or_404
 
-router = APIRouter(prefix="/api/pipeline", tags=["pipeline"])
+router = APIRouter(prefix="/api/pipeline", tags=["pipeline"],
+                   dependencies=[Depends(current_user)])
 
 
 def entry_dict(e: PipelineEntry):
@@ -34,16 +36,23 @@ def entry_dict(e: PipelineEntry):
     }
 
 
-def get_entry_or_404(db: Session, entry_id: int) -> PipelineEntry:
+def get_entry_or_404(db: Session, entry_id: int, owner_id: str) -> PipelineEntry:
+    """Fetch a pipeline entry whose parent profile belongs to `owner_id`, else
+    404. Ownership is inherited through the entry's profile_id, so this is the
+    chokepoint that keeps one user's kanban private from another's."""
     entry = db.get(PipelineEntry, entry_id)
     if not entry:
+        raise HTTPException(404, f"pipeline entry {entry_id} not found")
+    parent_owner = db.scalar(select(Profile.owner_id).where(Profile.id == entry.profile_id))
+    if not owns(parent_owner, owner_id):
         raise HTTPException(404, f"pipeline entry {entry_id} not found")
     return entry
 
 
 @router.get("")
-def list_pipeline(profile_id: int, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def list_pipeline(profile_id: int, db: Session = Depends(get_db),
+                 user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     rows = db.scalars(
         select(PipelineEntry)
         .where(PipelineEntry.profile_id == profile_id)
@@ -53,8 +62,9 @@ def list_pipeline(profile_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_entry(profile_id: int, body: PipelineCreate, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def create_entry(profile_id: int, body: PipelineCreate, db: Session = Depends(get_db),
+                 user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     if body.type not in PIPELINE_TYPES:
         raise HTTPException(400, f"type must be one of {sorted(PIPELINE_TYPES)}")
     if body.stage not in PIPELINE_STAGES:
@@ -66,10 +76,11 @@ def create_entry(profile_id: int, body: PipelineCreate, db: Session = Depends(ge
 
 
 @router.post("/import", status_code=201)
-def import_entries(profile_id: int, body: PipelineImport, db: Session = Depends(get_db)):
+def import_entries(profile_id: int, body: PipelineImport, db: Session = Depends(get_db),
+                   user: str = Depends(current_user)):
     """Bulk create for CSV/Excel import. Rows with an unknown type/stage are
     coerced to safe defaults rather than rejected — spreadsheets are messy."""
-    get_profile_or_404(db, profile_id)
+    get_profile_or_404(db, profile_id, user)
     created = 0
     for item in body.entries:
         data = item.model_dump()
@@ -84,8 +95,9 @@ def import_entries(profile_id: int, body: PipelineImport, db: Session = Depends(
 
 
 @router.patch("/{entry_id}")
-def update_entry(entry_id: int, body: PipelineUpdate, db: Session = Depends(get_db)):
-    entry = get_entry_or_404(db, entry_id)
+def update_entry(entry_id: int, body: PipelineUpdate, db: Session = Depends(get_db),
+                 user: str = Depends(current_user)):
+    entry = get_entry_or_404(db, entry_id, user)
     updates = body.model_dump(exclude_unset=True)
     if "type" in updates and updates["type"] not in PIPELINE_TYPES:
         raise HTTPException(400, f"type must be one of {sorted(PIPELINE_TYPES)}")
@@ -99,8 +111,9 @@ def update_entry(entry_id: int, body: PipelineUpdate, db: Session = Depends(get_
 
 
 @router.delete("/{entry_id}")
-def delete_entry(entry_id: int, db: Session = Depends(get_db)):
-    entry = get_entry_or_404(db, entry_id)
+def delete_entry(entry_id: int, db: Session = Depends(get_db),
+                 user: str = Depends(current_user)):
+    entry = get_entry_or_404(db, entry_id, user)
     db.delete(entry)
     db.commit()
     return {"deleted": entry_id}

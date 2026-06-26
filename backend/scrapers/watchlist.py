@@ -9,7 +9,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 DEFAULTS = {
     "join": ["pactos", "cocrafter", "gotfunded", "firstmomentum12"],
-    "personio": [],
+    "personio": ["adverity", "clark", "everphone", "personio", "pitch"],
 }
 
 

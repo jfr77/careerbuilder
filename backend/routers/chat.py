@@ -8,13 +8,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import llm
+from ..auth import current_user
 from ..context import matches_block, pipeline_block, profile_block
 from ..db import get_db
 from ..models import ChatMessage, Job, JobScore, PipelineEntry, Profile
 from ..schemas import ChatSend
 from .profiles import get_profile_or_404
 
-router = APIRouter(prefix="/api/chat", tags=["chat"])
+router = APIRouter(prefix="/api/chat", tags=["chat"],
+                   dependencies=[Depends(current_user)])
 
 EDITABLE_PROFILE_FIELDS = [
     "name", "location", "education", "experience_summary", "role_expectations",
@@ -155,24 +157,27 @@ def msg_dict(m: ChatMessage):
 
 
 @router.get("")
-def history(profile_id: int, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def history(profile_id: int, db: Session = Depends(get_db),
+            user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     rows = db.scalars(select(ChatMessage).where(ChatMessage.profile_id == profile_id)
                       .order_by(ChatMessage.created_at, ChatMessage.id)).all()
     return [msg_dict(m) for m in rows]
 
 
 @router.delete("")
-def clear_history(profile_id: int, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def clear_history(profile_id: int, db: Session = Depends(get_db),
+                  user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     db.execute(delete(ChatMessage).where(ChatMessage.profile_id == profile_id))
     db.commit()
     return {"cleared": True}
 
 
 @router.post("")
-def send(profile_id: int, body: ChatSend, db: Session = Depends(get_db)):
-    profile = get_profile_or_404(db, profile_id)
+def send(profile_id: int, body: ChatSend, db: Session = Depends(get_db),
+         user: str = Depends(current_user)):
+    profile = get_profile_or_404(db, profile_id, user)
     if not llm.available():
         raise HTTPException(503, "ANTHROPIC_API_KEY is not set — chat needs the LLM.")
 

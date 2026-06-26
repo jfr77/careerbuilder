@@ -142,23 +142,49 @@ def parse_search_json(payload, company_slug):
     return jobs
 
 
+class NotPersonioError(Exception):
+    """The slug is not a (live) Personio-hosted career page."""
+
+
+def _get_feed(session, url):
+    """GET a Personio feed endpoint with redirects DISABLED.
+
+    An unknown or migrated slug does not 404 — Personio answers the request to
+    {slug}.jobs.personio.de with a 307 redirect to the marketing site
+    (https://personio.com), which then rate-limits (429). Following that
+    redirect both hammers an unrelated host and produces a misleading "429"
+    error. So we refuse to follow it: any 3xx off the career subdomain means
+    "no such Personio company", reported cleanly without a second request."""
+    resp = session.get(url, timeout=20, allow_redirects=False)
+    if resp.is_redirect or resp.is_permanent_redirect:
+        raise NotPersonioError(
+            f"redirects to {resp.headers.get('Location', '?')} "
+            f"— not a live Personio career page"
+        )
+    resp.raise_for_status()
+    return resp
+
+
 def scrape_company(slug, session):
     """Fetch one company's postings: /xml first, /search.json as fallback.
     Returns (jobs, error); error is None only when one of the two structured
     endpoints parsed successfully."""
-    xml_url = f"https://{slug}.jobs.personio.de/xml"
+    base = f"https://{slug}.jobs.personio.de"
     try:
-        resp = session.get(xml_url, timeout=20)
-        resp.raise_for_status()
+        resp = _get_feed(session, f"{base}/xml")
         return parse_feed(resp.text, slug), None
+    except NotPersonioError as e:
+        # Definitive: the slug isn't on Personio. Don't bother with search.json
+        # (it redirects to the same marketing host) and don't hammer it.
+        print(f"  ! {slug}: {e}", file=sys.stderr)
+        return [], str(e)
     except (requests.RequestException, ET.ParseError) as e:
         xml_error = str(e)
         print(f"  ! {slug}: personio /xml failed ({e}), trying /search.json", file=sys.stderr)
 
     try:
-        resp = session.get(f"https://{slug}.jobs.personio.de/search.json", timeout=20)
-        resp.raise_for_status()
+        resp = _get_feed(session, f"{base}/search.json")
         return parse_search_json(resp.json(), slug), None
-    except (requests.RequestException, json.JSONDecodeError) as e:
+    except (NotPersonioError, requests.RequestException, json.JSONDecodeError) as e:
         print(f"  ! {slug}: personio /search.json failed too ({e})", file=sys.stderr)
         return [], f"/xml: {xml_error}; /search.json: {e}"

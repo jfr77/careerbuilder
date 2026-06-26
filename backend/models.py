@@ -37,6 +37,8 @@ class Profile(Base):
     target_companies: Mapped[list] = mapped_column(JSONB, default=list)
     availability: Mapped[str | None] = mapped_column(Text)
     cv_base: Mapped[str | None] = mapped_column(Text)
+    # Supabase auth.users.id (UUID as text); NULL = legacy/unclaimed seed data.
+    owner_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -86,6 +88,8 @@ class Template(Base):
     language: Mapped[str] = mapped_column(Text)
     body: Mapped[str] = mapped_column(Text)
     is_builtin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # NULL for built-ins (global, shared) and legacy copies; else the owner.
+    owner_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -96,6 +100,7 @@ class SavedFilter(Base):
     id: Mapped[int] = mapped_column(PKBigInt, primary_key=True)
     name: Mapped[str] = mapped_column(Text)
     filter_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    owner_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

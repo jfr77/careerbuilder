@@ -1,13 +1,15 @@
 # carreerbuilder
 
-A local-first job discovery and application platform — a personal career
-operating system. Multi-profile (Netflix-style switcher, no auth): every
-profile gets its own pipeline, fit scores, chat history, documents and saved
-events, while the scraped jobs pool is shared.
+A job discovery and application platform — a personal career operating system.
+Each account (Supabase Auth) owns a set of profiles with their own pipeline,
+fit scores, chat history, documents and saved events (Netflix-style switcher
+within an account), while the scraped jobs pool is shared across everyone.
+Run it fully local with auth disabled, or deploy it (see [`DEPLOY.md`](DEPLOY.md)).
 
-**Stack:** FastAPI + SQLAlchemy + Supabase Postgres · React + Vite + Tailwind ·
-Anthropic API (`claude-sonnet-4-20250514`). All data and LLM calls go through
-the backend — the browser never sees Supabase or API keys.
+**Stack:** FastAPI + SQLAlchemy + Supabase (Postgres + Auth) · React + Vite +
+Tailwind · Anthropic API (`claude-sonnet-4-20250514`). All data and LLM calls
+go through the backend — the browser only uses Supabase for login, and never
+sees the database or API keys.
 
 ## Setup
 
@@ -88,10 +90,41 @@ return a clean 503 (that's asserted, not skipped).
 - Parser tests run against saved fixtures (`tests/`), never live requests:
   `.venv/bin/python tests/test_scrapers.py`.
 
+### Coverage — what "all jobs" means
+
+The scraper is **watchlist-scoped, not a whole-platform crawl**. For every
+company on a watchlist it captures **all** of that company's open postings:
+
+- **join.com** — follows `?page=N` pagination to the last page, then dedupes,
+  so no posting is missed across pages.
+- **Personio** — the `/xml` feed lists every `<position>` a company has open
+  in one document (no pagination), so one fetch is the complete set.
+
+It does **not** discover companies on its own: neither Join nor Personio
+publishes a public master list of every employer slug, and crawling all of
+them would be impractical and abusive. So "all jobs of all companies" means
+*all jobs of every watchlisted company* — to widen coverage, add slugs to the
+watchlist (UI or the `data/` JSON files). An unknown/migrated Personio slug
+307-redirects to the marketing site; the scraper refuses to follow that
+redirect and reports the slug as "not a live Personio career page" instead of
+hammering `personio.com`.
+
+## Auth & deployment
+
+- **Accounts:** Supabase Auth (email + password). The backend verifies the JWT
+  on every request and scopes profiles, pipeline, saved filters and custom
+  templates to their `owner_id`; built-in templates and the scraped jobs pool
+  stay shared. Verified by `tests/test_auth.py` (JWT + cross-user isolation).
+- **Local dev:** run the backend with `AUTH_DISABLED=1` to skip login and act as
+  a fixed dev user that owns the seed data. Never use that flag on a deployed
+  backend.
+- **Deploy:** frontend → GitHub Pages, backend → Render, both wired to Supabase.
+  Full walkthrough in [`DEPLOY.md`](DEPLOY.md).
+
 ## Notes
 
 - Without `ANTHROPIC_API_KEY` the app fully works except LLM features, which
   show a banner and return clear 503s — never a blank crash.
-- Out of scope by design: auth, employer-side candidate ranking and HRIS/
-  onboarding handoff (see [`docs/ROADMAP.md`](docs/ROADMAP.md)), payments,
-  deployment, LinkedIn scraping (paste-to-add covers those postings).
+- Out of scope by design: employer-side candidate ranking and HRIS/onboarding
+  handoff (see [`docs/ROADMAP.md`](docs/ROADMAP.md)), payments, LinkedIn
+  scraping (paste-to-add covers those postings).

@@ -93,6 +93,33 @@ def test_personio():
     check("personio: search.json parsed", len(sj) == 1 and sj[0]["job_key"] == "personio:acme:7", sj)
     check("personio: search.json working student mapping", sj[0]["employment"] == "Working Student", sj)
 
+    # An unknown/migrated slug 307-redirects to the marketing site. scrape_company
+    # must NOT follow it (no 429 hammering) and must report a clean error.
+    class _Resp:
+        def __init__(self, status, headers=None, text="", redirect=False):
+            self.status_code = status
+            self.headers = headers or {}
+            self.text = text
+            self.is_redirect = redirect
+            self.is_permanent_redirect = False
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise personio_source.requests.HTTPError(f"{self.status_code}")
+
+    class _RedirectSession:
+        def __init__(self): self.calls = []
+        def get(self, url, **kw):
+            self.calls.append((url, kw.get("allow_redirects")))
+            return _Resp(307, {"Location": "https://personio.com"}, redirect=True)
+
+    sess = _RedirectSession()
+    jobs2, err2 = personio_source.scrape_company("ghostco", sess)
+    check("personio: redirect slug yields no jobs", jobs2 == [], jobs2)
+    check("personio: redirect slug reports clean error",
+          err2 is not None and "personio.com" in err2, err2)
+    check("personio: redirects disabled on request", sess.calls and sess.calls[0][1] is False, sess.calls)
+    check("personio: no second request after definitive redirect", len(sess.calls) == 1, sess.calls)
+
 
 # ------------------------------------------------------------- enrichment
 

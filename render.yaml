@@ -1,0 +1,27 @@
+# Render blueprint for the FastAPI backend (the half GitHub Pages can't host).
+# Render reads this on "New + → Blueprint" pointed at the repo. Secrets are
+# marked sync:false so Render prompts for them instead of storing them here.
+#
+# After deploy, note the service URL (https://<name>.onrender.com) — it becomes
+# the frontend's VITE_API_URL, and the Pages origin becomes this service's
+# CORS_ORIGINS. See DEPLOY.md.
+services:
+  - type: web
+    name: carreerbuilder-api
+    runtime: python
+    plan: free
+    region: frankfurt          # match your Supabase region for low latency
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.1"
+      - key: DATABASE_URL          # Supabase session-pooler connection string
+        sync: false
+      - key: SUPABASE_JWT_SECRET   # Supabase → Project Settings → API → JWT Secret
+        sync: false
+      - key: ANTHROPIC_API_KEY     # optional; enables LLM features
+        sync: false
+      - key: CORS_ORIGINS          # e.g. https://<your-username>.github.io
+        sync: false

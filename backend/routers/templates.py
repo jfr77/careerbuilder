@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
+from ..auth import current_user, owns
 from ..context import job_block, profile_block
 from ..db import get_db
 from ..models import Job, PipelineEntry, Template
@@ -21,7 +22,8 @@ from ..schemas import (TEMPLATE_TYPES, TemplateCreate, TemplateDraftRequest,
 from .pipeline import get_entry_or_404
 from .profiles import get_profile_or_404
 
-router = APIRouter(prefix="/api/templates", tags=["templates"])
+router = APIRouter(prefix="/api/templates", tags=["templates"],
+                   dependencies=[Depends(current_user)])
 
 PLACEHOLDER_RE = re.compile(r"\{\{(\w+)\}\}")
 
@@ -125,9 +127,11 @@ def template_dict(t: Template):
     }
 
 
-def get_template_or_404(db: Session, template_id: int) -> Template:
+def get_template_or_404(db: Session, template_id: int, owner_id: str) -> Template:
+    """A template is visible if it's a built-in (global) or owned by the caller.
+    Someone else's private copy returns 404."""
     t = db.get(Template, template_id)
-    if not t:
+    if not t or not (t.is_builtin or owns(t.owner_id, owner_id)):
         raise HTTPException(404, f"template {template_id} not found")
     return t
 
@@ -167,35 +171,40 @@ def validate(data: dict):
 
 
 @router.get("")
-def list_templates(db: Session = Depends(get_db)):
-    rows = db.scalars(select(Template).order_by(
-        Template.is_builtin.desc(), Template.type, Template.name)).all()
+def list_templates(db: Session = Depends(get_db), user: str = Depends(current_user)):
+    # built-ins (shared) plus the caller's own copies — never another user's.
+    rows = db.scalars(select(Template).where(
+        Template.is_builtin.is_(True) | (Template.owner_id == user)
+    ).order_by(Template.is_builtin.desc(), Template.type, Template.name)).all()
     return [template_dict(t) for t in rows]
 
 
 @router.post("", status_code=201)
-def create_template(body: TemplateCreate, db: Session = Depends(get_db)):
+def create_template(body: TemplateCreate, db: Session = Depends(get_db),
+                    user: str = Depends(current_user)):
     data = body.model_dump()
     validate(data)
-    t = Template(**data, is_builtin=False)
+    t = Template(**data, is_builtin=False, owner_id=user)
     db.add(t)
     db.commit()
     return template_dict(t)
 
 
 @router.post("/{template_id}/duplicate", status_code=201)
-def duplicate_template(template_id: int, db: Session = Depends(get_db)):
-    src = get_template_or_404(db, template_id)
-    copy = Template(name=f"{src.name} (copy)", type=src.type,
-                    language=src.language, body=src.body, is_builtin=False)
+def duplicate_template(template_id: int, db: Session = Depends(get_db),
+                       user: str = Depends(current_user)):
+    src = get_template_or_404(db, template_id, user)
+    copy = Template(name=f"{src.name} (copy)", type=src.type, language=src.language,
+                    body=src.body, is_builtin=False, owner_id=user)
     db.add(copy)
     db.commit()
     return template_dict(copy)
 
 
 @router.patch("/{template_id}")
-def update_template(template_id: int, body: TemplateUpdate, db: Session = Depends(get_db)):
-    t = get_template_or_404(db, template_id)
+def update_template(template_id: int, body: TemplateUpdate, db: Session = Depends(get_db),
+                    user: str = Depends(current_user)):
+    t = get_template_or_404(db, template_id, user)
     if t.is_builtin:
         raise HTTPException(403, "built-in templates are read-only — duplicate it to customize")
     updates = body.model_dump(exclude_unset=True)
@@ -208,8 +217,9 @@ def update_template(template_id: int, body: TemplateUpdate, db: Session = Depend
 
 
 @router.delete("/{template_id}")
-def delete_template(template_id: int, db: Session = Depends(get_db)):
-    t = get_template_or_404(db, template_id)
+def delete_template(template_id: int, db: Session = Depends(get_db),
+                    user: str = Depends(current_user)):
+    t = get_template_or_404(db, template_id, user)
     if t.is_builtin:
         raise HTTPException(403, "built-in templates cannot be deleted")
     db.delete(t)
@@ -219,11 +229,11 @@ def delete_template(template_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{template_id}/render")
 def render_template(template_id: int, profile_id: int, body: TemplateRenderRequest,
-                    db: Session = Depends(get_db)):
+                    db: Session = Depends(get_db), user: str = Depends(current_user)):
     """Pure placeholder fill from card + profile — no LLM involved."""
-    profile = get_profile_or_404(db, profile_id)
-    t = get_template_or_404(db, template_id)
-    entry = get_entry_or_404(db, body.pipeline_id) if body.pipeline_id else None
+    profile = get_profile_or_404(db, profile_id, user)
+    t = get_template_or_404(db, template_id, user)
+    entry = get_entry_or_404(db, body.pipeline_id, user) if body.pipeline_id else None
     text, unresolved = fill(t.body, placeholder_values(profile, entry))
     return {"text": text, "unresolved": unresolved,
             "template_id": t.id, "template_name": t.name,
@@ -232,12 +242,12 @@ def render_template(template_id: int, profile_id: int, body: TemplateRenderReque
 
 @router.post("/{template_id}/draft")
 def draft_with_ai(template_id: int, profile_id: int, body: TemplateDraftRequest,
-                  db: Session = Depends(get_db)):
+                  db: Session = Depends(get_db), user: str = Depends(current_user)):
     """Template + job description + profile -> one tailored, fully resolved
     draft for the editor. Nothing is ever sent anywhere automatically."""
-    profile = get_profile_or_404(db, profile_id)
-    t = get_template_or_404(db, template_id)
-    entry = get_entry_or_404(db, body.pipeline_id) if body.pipeline_id else None
+    profile = get_profile_or_404(db, profile_id, user)
+    t = get_template_or_404(db, template_id, user)
+    entry = get_entry_or_404(db, body.pipeline_id, user) if body.pipeline_id else None
     if not entry and not (body.pasted_posting or "").strip():
         raise HTTPException(400, "pick a pipeline entry or paste a posting")
 

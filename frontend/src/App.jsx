@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api.js'
+import { authEnabled } from './supabase.js'
+import { Login, signOut, useSession } from './auth.jsx'
 import { Btn, Field, Icon, inputCls, Modal, ToastProvider, useToast } from './ui.jsx'
 import ChatTab from './tabs/ChatTab.jsx'
 import JobsTab from './tabs/JobsTab.jsx'
@@ -136,6 +138,13 @@ function Shell() {
           )}
           <ProfileSwitcher profiles={profiles} active={active}
             onSwitch={setActiveId} onNew={() => setShowNew(true)} />
+          {authEnabled && (
+            <button onClick={signOut}
+              className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs text-neutral-500 hover:bg-white/5 hover:text-neutral-300">
+              <Icon name="profile" className="h-[14px] w-[14px]" />
+              Sign out
+            </button>
+          )}
         </div>
       </aside>
 
@@ -180,6 +189,14 @@ function Shell() {
 }
 
 export default function App() {
+  const { status } = useSession()
+
+  if (status === 'loading') {
+    return <div className="grid min-h-screen place-items-center bg-ink text-sm text-neutral-500">Loading…</div>
+  }
+  if (status === 'out') {
+    return <Login />
+  }
   return (
     <ToastProvider>
       <Shell />

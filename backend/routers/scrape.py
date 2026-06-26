@@ -2,12 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..auth import current_user
 from ..db import get_db
 from ..models import ScrapeRun
 from ..schemas import WatchlistAdd
 from ..scrapers import runner, watchlist
 
-router = APIRouter(prefix="/api/scrape", tags=["scrape"])
+router = APIRouter(prefix="/api/scrape", tags=["scrape"],
+                   dependencies=[Depends(current_user)])
 
 
 @router.post("/run", status_code=202)

@@ -6,13 +6,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import llm
+from ..auth import current_user
 from ..context import job_block, profile_block
 from ..db import get_db
 from ..models import Job, JobScore, PipelineEntry
 from ..schemas import PromptFilterBody
 from .profiles import get_profile_or_404
 
-router = APIRouter(prefix="/api/jobs", tags=["jobs"])
+router = APIRouter(prefix="/api/jobs", tags=["jobs"],
+                   dependencies=[Depends(current_user)])
 
 # The one place that defines what a job filter is. GET /api/jobs accepts these
 # as query params, the prompt-filter endpoint asks the LLM for the same JSON,
@@ -127,10 +129,11 @@ def list_jobs(profile_id: int, q: str | None = None, location: str | None = None
               company: str | None = None, language: str | None = None,
               posted_after: str | None = None, status: str = "open",
               remote: bool | None = None, sort: str = "newest",
-              page: int = 1, page_size: int = 50, db: Session = Depends(get_db)):
+              page: int = 1, page_size: int = 50, db: Session = Depends(get_db),
+              user: str = Depends(current_user)):
     """Filtered, paginated job pool joined with the ACTIVE profile's scores.
     All filtering is query-time — ingestion stores everything."""
-    get_profile_or_404(db, profile_id)
+    get_profile_or_404(db, profile_id, user)
     f = clean_filter({"q": q, "location": location, "employment_type": employment_type,
                       "source": source, "company": company, "language": language,
                       "posted_after": posted_after, "status": status, "remote": remote})
@@ -152,11 +155,12 @@ def job_facets(db: Session = Depends(get_db)):
 
 
 @router.post("/prompt-filter")
-def prompt_filter(profile_id: int, body: PromptFilterBody, db: Session = Depends(get_db)):
+def prompt_filter(profile_id: int, body: PromptFilterBody, db: Session = Depends(get_db),
+                  user: str = Depends(current_user)):
     """One LLM call turns a free-text prompt into the structured filter JSON,
     then a normal DB query runs — the LLM never scores individual jobs.
     Returns the parsed filter (for editable chips) plus the results."""
-    get_profile_or_404(db, profile_id)
+    get_profile_or_404(db, profile_id, user)
     today = date.today().isoformat()
     prompt = (
         "Convert this job-search request into a filter JSON object.\n\n"
@@ -218,9 +222,10 @@ def _score_one(db: Session, job: Job, profile) -> JobScore:
 
 
 @router.post("/{job_id}/score")
-def score_job(job_id: int, profile_id: int, db: Session = Depends(get_db)):
+def score_job(job_id: int, profile_id: int, db: Session = Depends(get_db),
+              user: str = Depends(current_user)):
     """Score (or re-score) one job for one profile."""
-    profile = get_profile_or_404(db, profile_id)
+    profile = get_profile_or_404(db, profile_id, user)
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "job not found")
@@ -234,10 +239,11 @@ def score_job(job_id: int, profile_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/score-unscored")
-def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_db)):
+def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_db),
+                   user: str = Depends(current_user)):
     """Lazy bulk scoring: score up to `limit` open relevant jobs that have no
     score yet for this profile. The UI can call repeatedly until done=0."""
-    profile = get_profile_or_404(db, profile_id)
+    profile = get_profile_or_404(db, profile_id, user)
     if not llm.available():
         raise HTTPException(503, "ANTHROPIC_API_KEY is not set — scoring needs the LLM.")
     jobs = db.scalars(
@@ -263,8 +269,9 @@ def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_d
 
 
 @router.post("/{job_id}/add-to-pipeline", status_code=201)
-def add_to_pipeline(job_id: int, profile_id: int, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def add_to_pipeline(job_id: int, profile_id: int, db: Session = Depends(get_db),
+                    user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(404, "job not found")

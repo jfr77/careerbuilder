@@ -9,8 +9,10 @@ CREATE TABLE IF NOT EXISTS saved_filters (
     id          BIGSERIAL PRIMARY KEY,
     name        TEXT NOT NULL,
     filter_json JSONB NOT NULL DEFAULT '{}',
+    owner_id    UUID,  -- Supabase auth.users.id; NULL = legacy/unclaimed
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_saved_filters_owner ON saved_filters (owner_id);
 
 -- ---------------------------------------------------------------- templates (Studio library)
 -- Placeholder syntax {{company}} {{role}} {{hiring_manager}} {{source}} {{my_name}}
@@ -22,10 +24,12 @@ CREATE TABLE IF NOT EXISTS templates (
     language    TEXT NOT NULL DEFAULT 'en' CHECK (language IN ('de', 'en')),
     body        TEXT NOT NULL,
     is_builtin  BOOLEAN NOT NULL DEFAULT FALSE,
+    owner_id    UUID,  -- NULL for built-ins (global) and legacy/unclaimed copies
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_templates_type ON templates (type);
+CREATE INDEX IF NOT EXISTS idx_templates_owner ON templates (owner_id);
 
 -- ---------------------------------------------------------------- profiles
 CREATE TABLE IF NOT EXISTS profiles (
@@ -42,8 +46,10 @@ CREATE TABLE IF NOT EXISTS profiles (
     target_companies   JSONB NOT NULL DEFAULT '[]',
     availability       TEXT,
     cv_base            TEXT,
+    owner_id           UUID,  -- Supabase auth.users.id; NULL = legacy/unclaimed
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS idx_profiles_owner ON profiles (owner_id);
 
 -- ---------------------------------------------------------------- jobs (shared pool)
 -- Ingestion is unrestricted: every posting found on a watchlisted company page
@@ -177,9 +183,12 @@ CREATE INDEX IF NOT EXISTS idx_chat_profile ON chat_messages (profile_id, create
 -- =============================================================================
 
 -- Profile #1: Julian
+-- owner_id is the local-dev pseudo-user (AUTH_DISABLED=1 → this UUID). In a
+-- real Supabase deploy, reassign it to your auth.users.id after first sign-in
+-- (see migrations/001_auth_ownership.sql).
 INSERT INTO profiles (id, name, location, education, experience_summary, skills, languages,
                       role_expectations, learning_goals, target_industries, target_companies,
-                      availability, cv_base)
+                      availability, cv_base, owner_id)
 VALUES (
     1,
     'Julian',
@@ -193,7 +202,8 @@ VALUES (
     '["B2B SaaS", "Venture Capital", "Consulting", "Fintech"]',
     '["First Momentum Ventures", "Porsche Consulting", "FINN"]',
     'Oct 2026 preferred (Sep flexible), 6 months',
-    E'Julian — Munich\n\nEDUCATION\n- TU München, B.Sc. Informatics & Economics (final year). Coursework: Entrepreneurship for Small Software-oriented Enterprises, Legal Basics for Startups.\n\nEXPERIENCE\n- Data Analyst (working student), parcelLab, Munich — 4 years. VC-backed B2B SaaS.\n  - Built and maintained dbt models on Amazon Redshift powering client-facing analytics.\n  - Ran SQL/Python analyses for UK/US enterprise accounts; presented findings directly to clients.\n  - Owned Metabase dashboards used by customer success and sales teams.\n  - Translated ambiguous stakeholder questions into reproducible data products.\n\nSKILLS\n- SQL, Python, dbt, Redshift, Metabase, data analytics, stakeholder communication.\n\nLANGUAGES\n- German (native), Russian (native), English (fluent), Spanish (learning).\n\nOTHER\n- Personal investment portfolio; active interest in venture capital and startup operations.'
+    E'Julian — Munich\n\nEDUCATION\n- TU München, B.Sc. Informatics & Economics (final year). Coursework: Entrepreneurship for Small Software-oriented Enterprises, Legal Basics for Startups.\n\nEXPERIENCE\n- Data Analyst (working student), parcelLab, Munich — 4 years. VC-backed B2B SaaS.\n  - Built and maintained dbt models on Amazon Redshift powering client-facing analytics.\n  - Ran SQL/Python analyses for UK/US enterprise accounts; presented findings directly to clients.\n  - Owned Metabase dashboards used by customer success and sales teams.\n  - Translated ambiguous stakeholder questions into reproducible data products.\n\nSKILLS\n- SQL, Python, dbt, Redshift, Metabase, data analytics, stakeholder communication.\n\nLANGUAGES\n- German (native), Russian (native), English (fluent), Spanish (learning).\n\nOTHER\n- Personal investment portfolio; active interest in venture capital and startup operations.',
+    '00000000-0000-0000-0000-000000000000'
 )
 ON CONFLICT (id) DO NOTHING;
 SELECT setval('profiles_id_seq', GREATEST((SELECT MAX(id) FROM profiles), 1));

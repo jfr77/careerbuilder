@@ -11,13 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
+from ..auth import current_user
 from ..context import profile_block
 from ..db import get_db
 from ..models import Event, EventSave
 from ..schemas import EventSaveBody
 from .profiles import get_profile_or_404
 
-router = APIRouter(prefix="/api/events", tags=["events"])
+router = APIRouter(prefix="/api/events", tags=["events"],
+                   dependencies=[Depends(current_user)])
 
 KINDS = {"event", "career_fair", "certification", "course"}
 
@@ -47,8 +49,9 @@ def event_dict(e: Event, save: EventSave | None = None):
 
 
 @router.get("")
-def list_events(profile_id: int, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def list_events(profile_id: int, db: Session = Depends(get_db),
+                user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     rows = db.execute(
         select(Event, EventSave)
         .outerjoin(EventSave, (EventSave.event_id == Event.id) & (EventSave.profile_id == profile_id))
@@ -60,8 +63,9 @@ def list_events(profile_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{event_id}/save")
-def set_saved(event_id: int, profile_id: int, body: EventSaveBody, db: Session = Depends(get_db)):
-    get_profile_or_404(db, profile_id)
+def set_saved(event_id: int, profile_id: int, body: EventSaveBody,
+              db: Session = Depends(get_db), user: str = Depends(current_user)):
+    get_profile_or_404(db, profile_id, user)
     if not db.get(Event, event_id):
         raise HTTPException(404, "event not found")
     save = db.scalar(select(EventSave).where(
@@ -76,11 +80,12 @@ def set_saved(event_id: int, profile_id: int, body: EventSaveBody, db: Session =
 
 
 @router.post("/recommend")
-def recommend(profile_id: int, db: Session = Depends(get_db)):
+def recommend(profile_id: int, db: Session = Depends(get_db),
+              user: str = Depends(current_user)):
     """LLM-generated suggestions tailored to the active profile. Stored with
     source='llm' and a per-profile relevance note; the UI labels them as AI
     suggestions to verify."""
-    profile = get_profile_or_404(db, profile_id)
+    profile = get_profile_or_404(db, profile_id, user)
     prompt = (
         "Suggest 5-8 career events, career fairs, certifications, or courses for "
         "this candidate (based in DACH region, internship/early-career stage):\n\n"
