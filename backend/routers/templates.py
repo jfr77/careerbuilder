@@ -8,12 +8,13 @@ description via one LLM call (the user always edits before sending anything).
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user, owns
+from ..ratelimit import LLM_LIMIT, limiter
 from ..context import job_block, profile_block
 from ..db import get_db
 from ..models import Job, PipelineEntry, Template
@@ -241,7 +242,8 @@ def render_template(template_id: int, profile_id: int, body: TemplateRenderReque
 
 
 @router.post("/{template_id}/draft")
-def draft_with_ai(template_id: int, profile_id: int, body: TemplateDraftRequest,
+@limiter.limit(LLM_LIMIT)
+def draft_with_ai(request: Request, template_id: int, profile_id: int, body: TemplateDraftRequest,
                   db: Session = Depends(get_db), user: str = Depends(current_user)):
     """Template + job description + profile -> one tailored, fully resolved
     draft for the editor. Nothing is ever sent anywhere automatically."""

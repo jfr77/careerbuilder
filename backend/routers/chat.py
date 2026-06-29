@@ -3,12 +3,13 @@ History persists per profile in chat_messages."""
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user
+from ..ratelimit import LLM_LIMIT, limiter
 from ..context import matches_block, pipeline_block, profile_block
 from ..db import get_db
 from ..models import ChatMessage, Job, JobScore, PipelineEntry, Profile
@@ -175,7 +176,8 @@ def clear_history(profile_id: int, db: Session = Depends(get_db),
 
 
 @router.post("")
-def send(profile_id: int, body: ChatSend, db: Session = Depends(get_db),
+@limiter.limit(LLM_LIMIT)
+def send(request: Request, profile_id: int, body: ChatSend, db: Session = Depends(get_db),
          user: str = Depends(current_user)):
     profile = get_profile_or_404(db, profile_id, user)
     if not llm.available():

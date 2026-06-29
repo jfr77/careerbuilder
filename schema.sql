@@ -2,6 +2,10 @@
 -- carreerbuilder — schema + seed data for Supabase Postgres
 -- Paste this whole file into the Supabase SQL editor and run it ONCE.
 -- (Safe to re-run: tables use IF NOT EXISTS, seeds use ON CONFLICT DO NOTHING.)
+--
+-- ON SUPABASE, then also run migrations/002_rls.sql to enable Row Level
+-- Security. It's a separate file because it uses auth.uid(), which exists only
+-- on Supabase — this file must still load into a plain local Postgres for tests.
 -- =============================================================================
 
 -- ---------------------------------------------------------------- saved_filters (global)

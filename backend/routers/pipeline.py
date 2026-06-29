@@ -1,11 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user, owns
+from ..ratelimit import LLM_LIMIT, limiter
 from ..db import get_db
 from ..models import PipelineEntry, Profile
 from ..schemas import (PIPELINE_STAGES, PIPELINE_TYPES, PasteExtract,
@@ -120,7 +121,8 @@ def delete_entry(entry_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/extract")
-def extract_from_paste(body: PasteExtract):
+@limiter.limit(LLM_LIMIT)
+def extract_from_paste(request: Request, body: PasteExtract):
     """Paste-to-add: LLM extracts structured fields from a raw posting/URL.
     Returns a draft the UI shows in an editable confirmation form."""
     prompt = (

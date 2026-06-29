@@ -5,6 +5,7 @@ psycopg2-binary>=2.9
 anthropic>=0.40
 pyjwt>=2.8
 requests>=2.31
+slowapi>=0.1.9
 beautifulsoup4>=4.12
 python-dotenv>=1.0
 pydantic>=2.6

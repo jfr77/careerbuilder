@@ -6,12 +6,13 @@ ingest_event() per item with source='scraper' — the events table is shared
 across profiles, while save/dismiss state lives per profile in event_saves.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user
+from ..ratelimit import LLM_LIMIT, limiter
 from ..context import profile_block
 from ..db import get_db
 from ..models import Event, EventSave
@@ -80,7 +81,8 @@ def set_saved(event_id: int, profile_id: int, body: EventSaveBody,
 
 
 @router.post("/recommend")
-def recommend(profile_id: int, db: Session = Depends(get_db),
+@limiter.limit(LLM_LIMIT)
+def recommend(request: Request, profile_id: int, db: Session = Depends(get_db),
               user: str = Depends(current_user)):
     """LLM-generated suggestions tailored to the active profile. Stored with
     source='llm' and a per-profile relevance note; the UI labels them as AI

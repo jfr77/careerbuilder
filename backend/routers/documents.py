@@ -5,12 +5,13 @@ onto a pipeline entry's documents JSON and exported client-side as .txt."""
 import difflib
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user
+from ..ratelimit import LLM_LIMIT, limiter
 from ..context import job_block, profile_block
 from ..db import get_db
 from ..models import Job
@@ -64,8 +65,9 @@ def _job_context(db: Session, owner_id: str, pipeline_id=None, job_id=None, past
 
 
 @router.post("/cover-letter")
-def cover_letter(profile_id: int, body: CoverLetterRequest, db: Session = Depends(get_db),
-                 user: str = Depends(current_user)):
+@limiter.limit(LLM_LIMIT)
+def cover_letter(request: Request, profile_id: int, body: CoverLetterRequest,
+                 db: Session = Depends(get_db), user: str = Depends(current_user)):
     profile = get_profile_or_404(db, profile_id, user)
     if body.tone not in TONES:
         raise HTTPException(400, f"tone must be one of {sorted(TONES)}")
@@ -82,8 +84,9 @@ def cover_letter(profile_id: int, body: CoverLetterRequest, db: Session = Depend
 
 
 @router.post("/cv-tailor")
-def cv_tailor(profile_id: int, body: CVTailorRequest, db: Session = Depends(get_db),
-              user: str = Depends(current_user)):
+@limiter.limit(LLM_LIMIT)
+def cv_tailor(request: Request, profile_id: int, body: CVTailorRequest,
+              db: Session = Depends(get_db), user: str = Depends(current_user)):
     profile = get_profile_or_404(db, profile_id, user)
     if not profile.cv_base:
         raise HTTPException(400, "this profile has no cv_base yet — add it in the Profile tab")
@@ -118,8 +121,9 @@ def cv_tailor(profile_id: int, body: CVTailorRequest, db: Session = Depends(get_
 
 
 @router.post("/trainer")
-def interview_trainer(profile_id: int, body: TrainerRequest, db: Session = Depends(get_db),
-                      user: str = Depends(current_user)):
+@limiter.limit(LLM_LIMIT)
+def interview_trainer(request: Request, profile_id: int, body: TrainerRequest,
+                      db: Session = Depends(get_db), user: str = Depends(current_user)):
     profile = get_profile_or_404(db, profile_id, user)
     if not body.pipeline_id and not body.industry:
         raise HTTPException(400, "pick a pipeline entry or an industry")

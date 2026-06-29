@@ -115,6 +115,9 @@ hammering `personio.com`.
   on every request and scopes profiles, pipeline, saved filters and custom
   templates to their `owner_id`; built-in templates and the scraped jobs pool
   stay shared. Verified by `tests/test_auth.py` (JWT + cross-user isolation).
+- **Defense in depth:** Row Level Security on every table
+  (`migrations/002_rls.sql`) blocks direct PostgREST access via the public anon
+  key, and the LLM endpoints are rate-limited (30/min per user) to cap spend.
 - **Local dev:** run the backend with `AUTH_DISABLED=1` to skip login and act as
   a fixed dev user that owns the seed data. Never use that flag on a deployed
   backend.

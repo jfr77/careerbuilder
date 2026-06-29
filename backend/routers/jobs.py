@@ -1,12 +1,13 @@
 import json
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import llm
 from ..auth import current_user
+from ..ratelimit import LLM_LIMIT, limiter
 from ..context import job_block, profile_block
 from ..db import get_db
 from ..models import Job, JobScore, PipelineEntry
@@ -155,8 +156,9 @@ def job_facets(db: Session = Depends(get_db)):
 
 
 @router.post("/prompt-filter")
-def prompt_filter(profile_id: int, body: PromptFilterBody, db: Session = Depends(get_db),
-                  user: str = Depends(current_user)):
+@limiter.limit(LLM_LIMIT)
+def prompt_filter(request: Request, profile_id: int, body: PromptFilterBody,
+                  db: Session = Depends(get_db), user: str = Depends(current_user)):
     """One LLM call turns a free-text prompt into the structured filter JSON,
     then a normal DB query runs — the LLM never scores individual jobs.
     Returns the parsed filter (for editable chips) plus the results."""
@@ -222,7 +224,8 @@ def _score_one(db: Session, job: Job, profile) -> JobScore:
 
 
 @router.post("/{job_id}/score")
-def score_job(job_id: int, profile_id: int, db: Session = Depends(get_db),
+@limiter.limit(LLM_LIMIT)
+def score_job(request: Request, job_id: int, profile_id: int, db: Session = Depends(get_db),
               user: str = Depends(current_user)):
     """Score (or re-score) one job for one profile."""
     profile = get_profile_or_404(db, profile_id, user)
@@ -239,8 +242,9 @@ def score_job(job_id: int, profile_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/score-unscored")
-def score_unscored(profile_id: int, limit: int = 15, db: Session = Depends(get_db),
-                   user: str = Depends(current_user)):
+@limiter.limit(LLM_LIMIT)
+def score_unscored(request: Request, profile_id: int, limit: int = 15,
+                   db: Session = Depends(get_db), user: str = Depends(current_user)):
     """Lazy bulk scoring: score up to `limit` open relevant jobs that have no
     score yet for this profile. The UI can call repeatedly until done=0."""
     profile = get_profile_or_404(db, profile_id, user)

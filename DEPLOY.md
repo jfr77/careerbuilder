@@ -35,6 +35,11 @@ touches the database — only the backend does.
 3. Make sure the schema is loaded: SQL editor → paste `schema.sql` → run. If the
    database already existed, also run `migrations/001_auth_ownership.sql` once
    (adds the `owner_id` columns).
+4. **Run `migrations/002_rls.sql`** in the SQL editor. This enables Row Level
+   Security — **required**, because Supabase exposes every table over PostgREST
+   using the anon key that ships in your frontend bundle. Without RLS that key
+   could read/write the database directly. After running it, the Supabase table
+   view should show "RLS enabled" on every table.
 
 ## 2. Backend on Render
 
@@ -94,11 +99,42 @@ No deploy needed. Two options:
 
 Requires **Node 18+** for the Vite build/dev server.
 
+## Taking it offline after a test run
+
+Nothing here deletes data — these just stop the app being reachable, and are
+all reversible.
+
+1. **Frontend (GitHub Pages):** repo **Settings → Pages → Source → None**
+   unpublishes the site immediately. (Or **Settings → Environments →
+   github-pages → delete**, or just disable the *Deploy frontend* workflow under
+   the Actions tab.)
+2. **Backend (Render):** service → **Settings → Suspend Web Service**. It stops
+   serving and stops consuming free-tier hours; **Resume** brings it back with
+   the same URL and env vars. (**Delete** removes it entirely.)
+3. **Database (Supabase):** optional — **Project Settings → General → Pause
+   project** stops the database. Resume later from the dashboard. Leaving it
+   running is also fine; with RLS on and the backend suspended, nothing can
+   reach it but you.
+
+To go fully dark with one move, suspend the Render service — the frontend then
+loads but every API call fails, so no data flows. To also stop anyone reaching
+the login screen, set Pages Source to None.
+
+Optional belt-and-braces while offline: **Supabase → Authentication →
+Providers → Email → disable "Allow new users to sign up"** so no accounts can be
+created in the meantime.
+
 ## Notes & hardening
 
+- **Security in place:** Supabase JWT auth (server-verified, fails closed),
+  per-user data isolation at the API, **Row Level Security** on every table
+  (`migrations/002_rls.sql`), and **rate limiting** (30/min per user) on the
+  LLM endpoints to cap Anthropic spend. Tune the limit in `backend/ratelimit.py`
+  or via `RATELIMIT_DISABLED=1` (local) / `RATELIMIT_STORAGE_URI` (multi-instance).
+- **Cap your Anthropic spend** in the Anthropic console — rate limiting bounds
+  the rate, not the monthly total.
+- **Open sign-up:** keep email confirmation ON (or restrict allowed domains) so
+  strangers can't create accounts against your Anthropic budget.
 - **Render free tier sleeps** after inactivity; the first request after idle
   takes a few seconds to wake. Fine for personal use.
-- The backend is the only database client, so ownership is enforced in app code
-  (the `owner_id` checks). Enabling Supabase **Row Level Security** would add
-  defense-in-depth but isn't required for this single-client setup.
 - Never set `AUTH_DISABLED=1` on a deployed backend — it disables auth entirely.

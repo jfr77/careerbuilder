@@ -15,9 +15,12 @@ from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
 
 from . import llm  # noqa: E402
 from .db import check_schema  # noqa: E402
+from .ratelimit import limiter  # noqa: E402
 from .routers import (chat, documents, events, filters, jobs, pipeline,  # noqa: E402
                       profiles, scrape, templates)
 
@@ -33,6 +36,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="carreerbuilder", lifespan=lifespan)
+
+# Rate limiting: the @limiter.limit decorators on the LLM routes consult this,
+# and a tripped limit returns 429 instead of bubbling up as a 500.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # In a split deploy (frontend on GitHub Pages, backend on its own host) the
 # browser calls the API cross-origin, so the Pages origin must be allowed.
